@@ -46,7 +46,20 @@ function Get-InstalledProcesses {
         [System.IO.Path]::GetFileNameWithoutExtension($_)
     })
 
-    return @(Get-Process -Name $processNames -ErrorAction SilentlyContinue)
+    return @(Get-Process -Name $processNames -ErrorAction SilentlyContinue | Where-Object {
+        try {
+            $processPath = [System.IO.Path]::GetFullPath($_.Path)
+            @($normalizedPaths | Where-Object {
+                [string]::Equals(
+                    $_,
+                    $processPath,
+                    [System.StringComparison]::OrdinalIgnoreCase)
+            }).Count -gt 0
+        }
+        catch {
+            $false
+        }
+    })
 }
 
 function Stop-InstalledProcesses {
