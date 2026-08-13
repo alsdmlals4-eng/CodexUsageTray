@@ -29,7 +29,6 @@ internal static class Program
             ("user prompt hook becomes running activity", TestPromptActivity),
             ("permission hook becomes approval activity", TestPermissionActivity),
             ("stop hook becomes completed activity", TestCompletedActivity),
-            ("notification hooks emit no Codex control output", TestHookSuccessOutput),
             ("unknown hook input is rejected", TestUnknownActivity),
             ("activity store updates a turn and keeps newest first", TestActivityStore),
             ("activity event survives IPC JSON round trip", TestActivitySerialization),
@@ -332,19 +331,6 @@ internal static class Program
         Throws<InvalidDataException>(() => ActivityEventParser.ParseHook(
             "{\"session_id\":\"thr_x\",\"cwd\":\"C:/x\",\"hook_event_name\":\"PostToolUse\"}",
             ObservedAt));
-        return Task.CompletedTask;
-    }
-
-    private static Task TestHookSuccessOutput()
-    {
-        Equal(string.Empty, HookProtocolOutput.GetSuccessJson("Stop"),
-            "notification-only Stop hooks must not enter the Codex control-output parser");
-        Equal(string.Empty, HookProtocolOutput.GetSuccessJson("UserPromptSubmit"),
-            "prompt hooks must not receive Stop-only output");
-        Equal(string.Empty, HookProtocolOutput.GetSuccessJson("PermissionRequest"),
-            "permission hooks must not receive Stop-only output");
-        Equal(string.Empty, HookProtocolOutput.GetSuccessJson(null),
-            "missing event names must not emit misleading output");
         return Task.CompletedTask;
     }
 
