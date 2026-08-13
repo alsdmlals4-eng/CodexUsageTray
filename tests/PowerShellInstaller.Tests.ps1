@@ -287,13 +287,19 @@ public static class ProcessLockHolder
         (Join-Path $packageDirectory 'CodexUsageTray.exe'),
         'failed-version',
         [System.Text.Encoding]::ASCII)
-    [System.IO.File]::WriteAllText(
-        (Join-Path $packageDirectory 'CodexUsageTray.EventBridge.exe'),
-        'failed-bridge',
-        [System.Text.Encoding]::ASCII)
+    Copy-Item `
+        -LiteralPath $lockHolderTemplate `
+        -Destination (Join-Path $packageDirectory 'CodexUsageTray.EventBridge.exe') `
+        -Force
     [System.IO.File]::WriteAllText(
         (Join-Path $packageDirectory 'setup-integration.ps1'),
-        "throw 'forced integration failure'",
+        @'
+$startedBridge = Start-Process `
+    -FilePath (Join-Path $PSScriptRoot 'CodexUsageTray.EventBridge.exe') `
+    -PassThru
+Start-Sleep -Milliseconds 300
+throw "forced integration failure after bridge start: $($startedBridge.Id)"
+'@,
         [System.Text.Encoding]::ASCII)
 
     Assert-Throws {
