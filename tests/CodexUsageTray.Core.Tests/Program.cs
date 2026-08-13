@@ -24,6 +24,7 @@ internal static class Program
             ("JSON-RPC reports unexpected EOF", TestJsonRpcEof),
             ("JSON-RPC honors cancellation", TestJsonRpcCancellation),
             ("JSON-RPC disposal cancels an active read", TestJsonRpcDisposal),
+            ("App Server diagnostics stay bounded and redact credentials", TestDiagnosticBuffer),
             ("tooltip stays within NotifyIcon limit", TestTooltipLength),
             ("flyout row includes remaining and local reset", TestFlyoutRow),
             ("user prompt hook becomes running activity", TestPromptActivity),
@@ -233,6 +234,26 @@ internal static class Program
         await connection.DisposeAsync();
 
         await ThrowsAsync<OperationCanceledException>(() => request);
+    }
+
+    private static Task TestDiagnosticBuffer()
+    {
+        var buffer = new BoundedDiagnosticBuffer(maxCharacters: 96);
+        buffer.Append($"old-prefix-{new string('x', 90)}");
+        buffer.Append("Authorization: Bearer super-secret-token");
+        buffer.Append("{\"accessToken\":\"another-secret-token\"}");
+
+        var snapshot = buffer.Snapshot();
+
+        True(snapshot.Length <= 96, "diagnostics must stay within the configured character bound");
+        True(!snapshot.Contains("old-prefix", StringComparison.Ordinal),
+            "old diagnostic lines must be evicted before newer evidence");
+        True(!snapshot.Contains("super-secret-token", StringComparison.Ordinal) &&
+             !snapshot.Contains("another-secret-token", StringComparison.Ordinal),
+            "credential-shaped values must never survive diagnostic capture");
+        True(snapshot.Contains("[REDACTED]", StringComparison.Ordinal),
+            "redaction must remain visible so the diagnostic is understandable");
+        return Task.CompletedTask;
     }
 
     private static Task TestTooltipLength()
