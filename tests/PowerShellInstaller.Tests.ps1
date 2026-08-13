@@ -121,6 +121,7 @@ foreach ($requiredWorkflowText in @(
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) "CodexUsageTray-InstallerTests-$([guid]::NewGuid().ToString('N'))"
 $packageDirectory = Join-Path $testRoot 'package'
 $installDirectory = Join-Path $testRoot 'installed'
+$lockingBridge = $null
 
 try {
     New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
@@ -219,8 +220,56 @@ try {
         Get-ChildItem -LiteralPath $testRoot -Directory |
             Where-Object { $_.Name -like 'installed.update-*' -or $_.Name -like 'installed.backup-*' }
     ).Count 'update leaves no staging or backup directory'
+
+    $lockHolderSource = @'
+using System.Threading;
+
+public static class ProcessLockHolder
+{
+    public static void Main()
+    {
+        Thread.Sleep(30000);
+    }
+}
+'@
+    $lockHolderTemplate = Join-Path $testRoot 'ProcessLockHolder.exe'
+    Add-Type `
+        -TypeDefinition $lockHolderSource `
+        -Language CSharp `
+        -OutputAssembly $lockHolderTemplate `
+        -OutputType ConsoleApplication
+    $installedBridge = Join-Path $installDirectory 'CodexUsageTray.EventBridge.exe'
+    Remove-Item -LiteralPath $installedBridge -Force
+    Copy-Item -LiteralPath $lockHolderTemplate -Destination $installedBridge
+    $lockingBridge = Start-Process -FilePath $installedBridge -PassThru
+    Start-Sleep -Milliseconds 300
+    Assert-True (-not $lockingBridge.HasExited) 'EventBridge lock fixture is running before update'
+
+    [System.IO.File]::WriteAllText(
+        (Join-Path $packageDirectory 'CodexUsageTray.exe'),
+        'version-3',
+        [System.Text.Encoding]::ASCII)
+    [System.IO.File]::WriteAllText(
+        (Join-Path $packageDirectory 'CodexUsageTray.EventBridge.exe'),
+        'bridge-3',
+        [System.Text.Encoding]::ASCII)
+    & $installerPath `
+        -PackageDirectory $packageDirectory `
+        -InstallDirectory $installDirectory `
+        -DoNotLaunch `
+        -SkipCodexHooks
+
+    $lockingBridge.Refresh()
+    Assert-True $lockingBridge.HasExited 'update stops the installed EventBridge process'
+    Assert-Equal 'version-3' (
+        [System.IO.File]::ReadAllText((Join-Path $installDirectory 'CodexUsageTray.exe'))
+    ) 'update succeeds while the installed EventBridge is running'
 }
 finally {
+    if ($null -ne $lockingBridge -and -not $lockingBridge.HasExited) {
+        Stop-Process -Id $lockingBridge.Id -Force -ErrorAction SilentlyContinue
+        $lockingBridge.WaitForExit(5000)
+    }
     if (Test-Path -LiteralPath $testRoot) {
         Remove-Item -LiteralPath $testRoot -Recurse -Force
     }
