@@ -19,7 +19,7 @@ $command = "`"$hookWrapperPath`""
 $wrapperTemporaryPath = "$hookWrapperPath.tmp-$PID"
 $wrapperText = @(
     '@echo off',
-    '"%~dp0CodexUsageTray.EventBridge.exe" --hook',
+    '"%~dp0CodexUsageTray.EventBridge.exe" --hook >nul 2>nul',
     'exit /b 0',
     ''
 ) -join "`r`n"
