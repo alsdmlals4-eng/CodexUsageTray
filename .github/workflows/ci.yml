@@ -1,0 +1,47 @@
+name: Test Windows app
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Test Windows PowerShell compatibility and installers
+        shell: pwsh
+        run: |
+          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+              -File .\tests\PowerShellInstaller.Tests.ps1
+          if ($LASTEXITCODE -ne 0) {
+              throw "PowerShell installer tests failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Test core logic
+        shell: pwsh
+        run: |
+          dotnet run --configuration Release `
+              --project .\tests\CodexUsageTray.Core.Tests\CodexUsageTray.Core.Tests.csproj
+          if ($LASTEXITCODE -ne 0) {
+              throw "Core tests failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Test Windows UI regressions
+        shell: pwsh
+        run: |
+          dotnet run --configuration Release `
+              --project .\tests\CodexUsageTray.Windows.Tests\CodexUsageTray.Windows.Tests.csproj
+          if ($LASTEXITCODE -ne 0) {
+              throw "Windows UI regression tests failed with exit code $LASTEXITCODE."
+          }
