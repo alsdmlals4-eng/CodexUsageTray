@@ -114,6 +114,32 @@ function Move-InstallDirectory {
     }
 }
 
+function Remove-InstallDirectory {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string[]]$ExecutablePaths,
+        [int]$TimeoutSeconds = 5
+    )
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while (Test-Path -LiteralPath $Path) {
+        try {
+            Remove-Item -LiteralPath $Path -Recurse -Force
+            return
+        }
+        catch {
+            $isRetryable = $_.Exception -is [System.IO.IOException] -or
+                $_.Exception -is [System.UnauthorizedAccessException]
+            if (-not $isRetryable -or [DateTime]::UtcNow -ge $deadline) {
+                throw
+            }
+
+            Stop-InstalledProcesses -ExecutablePaths $ExecutablePaths -TimeoutSeconds 1
+            Start-Sleep -Milliseconds 100
+        }
+    }
+}
+
 foreach ($fileName in $requiredFiles) {
     $sourcePath = Join-Path $resolvedPackage $fileName
     if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
@@ -209,6 +235,7 @@ try {
 }
 catch {
     $failure = $_
+    Stop-InstalledProcesses -ExecutablePaths $installedProcessPaths
     if ($startupValueChanged) {
         if ($null -eq $previousStartupValue) {
             Remove-ItemProperty -Path $runKey -Name $runValueName -ErrorAction SilentlyContinue
@@ -224,7 +251,9 @@ catch {
     }
 
     if ($replacementActivated -and (Test-Path -LiteralPath $resolvedInstall)) {
-        Remove-Item -LiteralPath $resolvedInstall -Recurse -Force
+        Remove-InstallDirectory `
+            -Path $resolvedInstall `
+            -ExecutablePaths $installedProcessPaths
     }
 
     if (Test-Path -LiteralPath $backupDirectory) {
