@@ -78,7 +78,18 @@ foreach ($file in Get-PowerShellSourceFiles) {
         $bytes[0] -eq 0xEF -and
         $bytes[1] -eq 0xBB -and
         $bytes[2] -eq 0xBF
-    Assert-True $hasUtf8Bom "$($file.Name) uses UTF-8 BOM"
+    $isOnlineInstaller = [string]::Equals(
+        $file.FullName,
+        $onlineInstallerPath,
+        [System.StringComparison]::OrdinalIgnoreCase)
+    if ($isOnlineInstaller) {
+        Assert-True (-not $hasUtf8Bom) 'online installer is BOM-free for irm pipe execution'
+        $nonAsciiByteCount = @($bytes | Where-Object { $_ -gt 0x7F }).Count
+        Assert-Equal 0 $nonAsciiByteCount 'online installer is ASCII for Windows PowerShell 5.1'
+    }
+    else {
+        Assert-True $hasUtf8Bom "$($file.Name) uses UTF-8 BOM"
+    }
 
     $tokens = $null
     $parseErrors = $null

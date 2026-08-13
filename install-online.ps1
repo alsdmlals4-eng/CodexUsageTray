@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [switch]$LibraryOnly
 )
@@ -18,7 +18,7 @@ function Read-ExpectedSha256 {
     $token = @($content -split '\s+')[0]
 
     if ($token -notmatch '^[0-9A-Fa-f]{64}$') {
-        throw "올바르지 않은 SHA-256 체크섬 파일입니다: $resolvedPath"
+        throw "Invalid SHA-256 checksum file: $resolvedPath"
     }
 
     return $token.ToUpperInvariant()
@@ -33,7 +33,7 @@ function Assert-ArchiveSha256 {
     )
 
     if ($ExpectedSha256 -notmatch '^[0-9A-Fa-f]{64}$') {
-        throw '비교할 SHA-256 체크섬의 형식이 올바르지 않습니다.'
+        throw 'Expected SHA-256 checksum format is invalid.'
     }
 
     $actualSha256 = (Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash
@@ -41,7 +41,7 @@ function Assert-ArchiveSha256 {
             $actualSha256,
             $ExpectedSha256,
             [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "다운로드 파일의 체크섬이 일치하지 않습니다. 예상: $ExpectedSha256, 실제: $actualSha256"
+        throw "Downloaded archive checksum mismatch. Expected: $ExpectedSha256, actual: $actualSha256"
     }
 
     return $true
@@ -62,7 +62,7 @@ function Install-CodexUsageTrayOnline {
     try {
         New-Item -ItemType Directory -Path $temporaryDirectory -Force | Out-Null
 
-        Write-Host 'Codex Usage Tray 최신 버전을 다운로드합니다...'
+        Write-Host 'Downloading the latest Codex Usage Tray release...'
         Invoke-WebRequest `
             -Uri "$releaseBaseUrl/$archiveName" `
             -OutFile $archivePath `
@@ -76,7 +76,7 @@ function Install-CodexUsageTrayOnline {
         [void](Assert-ArchiveSha256 `
             -ArchivePath $archivePath `
             -ExpectedSha256 $expectedSha256)
-        Write-Host '다운로드 파일 검증을 완료했습니다.'
+        Write-Host 'Download verification completed.'
 
         Expand-Archive `
             -LiteralPath $archivePath `
@@ -85,7 +85,7 @@ function Install-CodexUsageTrayOnline {
 
         $releaseInstaller = Join-Path $expandedDirectory 'install-release.ps1'
         if (-not (Test-Path -LiteralPath $releaseInstaller -PathType Leaf)) {
-            throw '배포 파일에서 install-release.ps1을 찾을 수 없습니다.'
+            throw 'install-release.ps1 was not found in the release archive.'
         }
 
         & $releaseInstaller `
