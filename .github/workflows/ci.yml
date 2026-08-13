@@ -70,3 +70,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Windows solution build failed with exit code $LASTEXITCODE."
           }
+
+          $bridgePath = Get-ChildItem `
+              -LiteralPath .\src\CodexUsageTray.EventBridge\bin\Release `
+              -Filter CodexUsageTray.EventBridge.exe `
+              -File `
+              -Recurse |
+              Select-Object -First 1 -ExpandProperty FullName
+          if (-not $bridgePath) {
+            throw 'Built EventBridge executable was not found.'
+          }
+          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+              -File .\tests\EventBridgeHook.Tests.ps1 `
+              -BridgePath $bridgePath
+          if ($LASTEXITCODE -ne 0) {
+            throw "EventBridge Hook integration tests failed with exit code $LASTEXITCODE."
+          }

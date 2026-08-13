@@ -23,6 +23,9 @@
 - Create: `src/CodexUsageTray.Core/HookProtocolOutput.cs`
 - Modify: `src/CodexUsageTray.EventBridge/Program.cs`
 - Modify: `tests/CodexUsageTray.Core.Tests/Program.cs`
+- Create: `tests/EventBridgeHook.Tests.ps1`
+- Modify: `.github/workflows/ci.yml`
+- Modify: `.github/workflows/release.yml`
 
 **Interfaces:**
 - Produces: `HookProtocolOutput.GetSuccessJson(string? eventName) -> string`
@@ -42,7 +45,7 @@ Expected: `HookProtocolOutput`이 없어 컴파일 실패한다.
 
 - [ ] **Step 4: Run the full Windows CI and verify GREEN**
 
-Expected: 브라우저, PowerShell, Core, Windows UI, 솔루션 빌드가 모두 성공한다.
+Expected: 브라우저, PowerShell, Core, Windows UI, 솔루션 빌드와 실제 EXE·설치 래퍼 통합 테스트가 모두 성공한다.
 
 ### Task 2: Adversarial review and release
 

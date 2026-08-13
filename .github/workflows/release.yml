@@ -127,6 +127,13 @@ jobs:
               throw "Event bridge publish failed with exit code $LASTEXITCODE."
           }
 
+          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+              -File .\tests\EventBridgeHook.Tests.ps1 `
+              -BridgePath .\artifacts\publish\bridge\CodexUsageTray.EventBridge.exe
+          if ($LASTEXITCODE -ne 0) {
+            throw "Published EventBridge Hook integration tests failed with exit code $LASTEXITCODE."
+          }
+
       - name: Package and smoke-test release
         shell: pwsh
         run: |
