@@ -64,7 +64,16 @@ jobs:
           dotnet run --configuration Release `
               --project .\tests\CodexUsageTray.Core.Tests\CodexUsageTray.Core.Tests.csproj
           if ($LASTEXITCODE -ne 0) {
-              throw "Core tests failed with exit code $LASTEXITCODE."
+            throw "Core tests failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Test Windows UI regressions
+        shell: pwsh
+        run: |
+          dotnet run --configuration Release `
+              --project .\tests\CodexUsageTray.Windows.Tests\CodexUsageTray.Windows.Tests.csproj
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows UI regression tests failed with exit code $LASTEXITCODE."
           }
 
       - name: Publish Windows executables
