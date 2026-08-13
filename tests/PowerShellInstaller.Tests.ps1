@@ -171,6 +171,12 @@ try {
         (Join-Path $packageDirectory 'remove-integration.ps1'),
         '# remove fixture',
         [System.Text.Encoding]::ASCII)
+    $extensionFixture = Join-Path $packageDirectory 'browser-extension'
+    New-Item -ItemType Directory -Path $extensionFixture -Force | Out-Null
+    [System.IO.File]::WriteAllText(
+        (Join-Path $extensionFixture 'manifest.json'),
+        '{"manifest_version":3}',
+        [System.Text.Encoding]::ASCII)
     Copy-Item -LiteralPath $installerPath -Destination (Join-Path $packageDirectory 'install-release.ps1')
 
     & $installerPath `
@@ -188,7 +194,8 @@ try {
     foreach ($requiredName in @(
         'setup-integration.ps1',
         'remove-integration.ps1',
-        'install-release.ps1')) {
+        'install-release.ps1',
+        'browser-extension\manifest.json')) {
         Assert-True (
             Test-Path -LiteralPath (Join-Path $installDirectory $requiredName) -PathType Leaf
         ) "first install copies $requiredName"

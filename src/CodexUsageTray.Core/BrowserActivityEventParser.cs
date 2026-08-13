@@ -1,0 +1,95 @@
+using System.Text.Json;
+
+namespace CodexUsageTray.Core;
+
+public static class BrowserActivityEventParser
+{
+    private const int TitleLimit = 80;
+
+    public static ActivityEvent Parse(string json, DateTimeOffset occurredAt)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(json);
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        var statusName = RequiredString(root, "status");
+        var activityId = RequiredString(root, "activityId");
+        var sourceUri = ParseChatGptConversationUri(RequiredString(root, "url"));
+        var conversationId = GetConversationId(sourceUri);
+        var title = Limit(OptionalString(root, "title") ?? string.Empty, TitleLimit);
+        var status = statusName switch
+        {
+            "completed" => ActivityStatus.Completed,
+            "approval_required" => ActivityStatus.ApprovalRequired,
+            _ => throw new InvalidDataException($"지원하지 않는 ChatGPT 웹 상태입니다: {statusName}")
+        };
+
+        return new ActivityEvent(
+            $"web:{conversationId}",
+            activityId,
+            string.Empty,
+            "ChatGPT Web",
+            string.IsNullOrWhiteSpace(title) ? Shorten(conversationId, 8) : title,
+            status,
+            status == ActivityStatus.Completed
+                ? "ChatGPT 응답 생성이 끝났습니다."
+                : "ChatGPT에서 승인 또는 확인이 필요합니다.",
+            string.Empty,
+            occurredAt,
+            SourceKind: ActivitySourceKind.ChatGptWeb,
+            SourceUri: sourceUri.AbsoluteUri);
+    }
+
+    private static Uri ParseChatGptConversationUri(string value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(uri.Host, "chatgpt.com", StringComparison.OrdinalIgnoreCase) ||
+            !uri.IsDefaultPort ||
+            !string.IsNullOrEmpty(uri.UserInfo))
+        {
+            throw new InvalidDataException("ChatGPT 대화 URL이 올바르지 않습니다.");
+        }
+
+        _ = GetConversationId(uri);
+        var safe = new UriBuilder(uri)
+        {
+            Query = string.Empty,
+            Fragment = string.Empty
+        };
+        return safe.Uri;
+    }
+
+    private static string GetConversationId(Uri uri)
+    {
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        for (var index = 0; index < segments.Length - 1; index++)
+        {
+            if (string.Equals(segments[index], "c", StringComparison.Ordinal) &&
+                !string.IsNullOrWhiteSpace(segments[index + 1]))
+            {
+                return Uri.UnescapeDataString(segments[index + 1]);
+            }
+        }
+
+        throw new InvalidDataException("ChatGPT 대화 식별자가 URL에 없습니다.");
+    }
+
+    private static string RequiredString(JsonElement root, string propertyName) =>
+        OptionalString(root, propertyName) is { Length: > 0 } value
+            ? value
+            : throw new InvalidDataException($"ChatGPT 웹 이벤트 필드가 없습니다: {propertyName}");
+
+    private static string? OptionalString(JsonElement root, string propertyName) =>
+        root.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+            ? property.GetString()?.Trim()
+            : null;
+
+    private static string Shorten(string value, int length) =>
+        value.Length <= length ? value : value[..length];
+
+    private static string Limit(string value, int length)
+    {
+        var normalized = string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return normalized.Length <= length ? normalized : normalized[..(length - 1)] + "…";
+    }
+}

@@ -48,6 +48,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Codex 로그인", null, (_, _) => OpenCodexLogin());
         menu.Items.Add("ChatGPT 알림 설정 안내", null, (_, _) => OpenChatGptNotificationGuide());
+        menu.Items.Add("웹 ChatGPT 확장 폴더 열기", null, (_, _) => OpenBrowserExtensionFolder());
         _startupItem = new ToolStripMenuItem("Windows 시작 시 실행")
         {
             Checked = SafeReadStartupState(),
@@ -169,7 +170,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void OpenActivity(ActivityEvent activity)
     {
-        if (!WindowActivator.TryActivate(activity.SourceWindowHandle, activity.SourceProcessId))
+        if (!ActivitySourceLauncher.TryOpen(activity))
         {
             ShowActivityHistory();
         }
@@ -288,6 +289,29 @@ internal sealed class TrayApplicationContext : ApplicationContext
         catch (Exception exception)
         {
             MessageBox.Show(exception.Message, "알림 설정 안내", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private static void OpenBrowserExtensionFolder()
+    {
+        try
+        {
+            var extensionPath = Path.Combine(AppContext.BaseDirectory, "browser-extension");
+            if (!Directory.Exists(extensionPath))
+            {
+                throw new DirectoryNotFoundException("웹 ChatGPT 확장 폴더가 설치되어 있지 않습니다.");
+            }
+
+            _ = Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{extensionPath}\"",
+                UseShellExecute = true
+            });
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(exception.Message, "웹 ChatGPT 확장", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 

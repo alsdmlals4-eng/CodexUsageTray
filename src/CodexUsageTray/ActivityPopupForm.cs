@@ -130,6 +130,11 @@ internal sealed class ActivityPopupForm : Form
 
     private static string BuildSource(ActivityEvent activity)
     {
+        if (activity.SourceKind == ActivitySourceKind.ChatGptWeb)
+        {
+            return $"ChatGPT Web · {activity.ChatLabel}";
+        }
+
         var terminal = string.IsNullOrWhiteSpace(activity.TerminalTitle)
             ? string.Empty
             : $" · {activity.TerminalTitle}";

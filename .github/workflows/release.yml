@@ -121,6 +121,10 @@ jobs:
                   '.\scripts\remove-integration.ps1')) {
               Copy-Item -LiteralPath $scriptPath -Destination $packageDirectory
           }
+          Copy-Item `
+              -LiteralPath .\browser-extension `
+              -Destination (Join-Path $packageDirectory 'browser-extension') `
+              -Recurse
 
           & .\scripts\install-release.ps1 `
               -PackageDirectory $packageDirectory `
@@ -133,7 +137,10 @@ jobs:
                   'CodexUsageTray.EventBridge.exe',
                   'install-release.ps1',
                   'setup-integration.ps1',
-                  'remove-integration.ps1')) {
+                  'remove-integration.ps1',
+                  'browser-extension\manifest.json',
+                  'browser-extension\background.js',
+                  'browser-extension\content.js')) {
               $installedFile = Join-Path $smokeDirectory $requiredFile
               if (-not (Test-Path -LiteralPath $installedFile -PathType Leaf)) {
                   throw "Smoke install did not produce $requiredFile."

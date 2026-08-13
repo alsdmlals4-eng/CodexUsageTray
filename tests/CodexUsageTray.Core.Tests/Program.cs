@@ -31,7 +31,10 @@ internal static class Program
             ("stop hook becomes completed activity", TestCompletedActivity),
             ("unknown hook input is rejected", TestUnknownActivity),
             ("activity store updates a turn and keeps newest first", TestActivityStore),
-            ("activity event survives IPC JSON round trip", TestActivitySerialization)
+            ("activity event survives IPC JSON round trip", TestActivitySerialization),
+            ("web completion keeps only safe navigation metadata", TestWebCompletionActivity),
+            ("web approval becomes a persistent approval activity", TestWebApprovalActivity),
+            ("web activity rejects non-ChatGPT navigation URLs", TestWebActivityRejectsUnsafeUrl)
         };
 
         var failures = 0;
@@ -367,6 +370,61 @@ internal static class Program
             throw new InvalidOperationException("activity IPC payload did not deserialize");
 
         Equal(original, restored, "activity IPC round trip");
+        return Task.CompletedTask;
+    }
+
+    private static Task TestWebCompletionActivity()
+    {
+        const string json = """
+        {
+          "status": "completed",
+          "activityId": "web-turn-17",
+          "url": "https://chatgpt.com/c/abc-123?temporary-chat=true#bottom",
+          "title": "Windows 알림 앱 만들기",
+          "summary": "이 값은 대화 본문일 수 있으므로 절대 사용하면 안 됩니다."
+        }
+        """;
+
+        var activity = BrowserActivityEventParser.Parse(json, ObservedAt);
+
+        Equal(ActivitySourceKind.ChatGptWeb, activity.SourceKind, "web source kind");
+        Equal(ActivityStatus.Completed, activity.Status, "web completion status");
+        Equal("https://chatgpt.com/c/abc-123", activity.SourceUri ?? string.Empty,
+            "query and fragment must be removed from the navigation target");
+        Equal("Windows 알림 앱 만들기", activity.ChatLabel, "safe tab title label");
+        Equal("ChatGPT 응답 생성이 끝났습니다.", activity.Summary,
+            "extension-provided body-like text must be ignored");
+        return Task.CompletedTask;
+    }
+
+    private static Task TestWebApprovalActivity()
+    {
+        const string json = """
+        {
+          "status": "approval_required",
+          "activityId": "approval-3",
+          "url": "https://chatgpt.com/g/g-example/c/thread-99",
+          "title": "배포 확인"
+        }
+        """;
+
+        var activity = BrowserActivityEventParser.Parse(json, ObservedAt);
+
+        Equal(ActivityStatus.ApprovalRequired, activity.Status, "web approval status");
+        Equal("web:thread-99", activity.SessionId, "conversation id becomes the web session key");
+        Equal("approval-3", activity.TurnId ?? string.Empty, "browser activity id becomes the turn key");
+        Equal("ChatGPT에서 승인 또는 확인이 필요합니다.", activity.Summary, "approval summary");
+        return Task.CompletedTask;
+    }
+
+    private static Task TestWebActivityRejectsUnsafeUrl()
+    {
+        Throws<InvalidDataException>(() => BrowserActivityEventParser.Parse(
+            "{\"status\":\"completed\",\"activityId\":\"x\",\"url\":\"https://example.com/c/stolen\"}",
+            ObservedAt));
+        Throws<InvalidDataException>(() => BrowserActivityEventParser.Parse(
+            "{\"status\":\"completed\",\"activityId\":\"x\",\"url\":\"javascript:alert(1)\"}",
+            ObservedAt));
         return Task.CompletedTask;
     }
 

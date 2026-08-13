@@ -149,11 +149,16 @@ internal sealed class ActivityHistoryForm : Form
 
     private static void ActivateOrKeepHistory(ActivityEvent activity)
     {
-        _ = WindowActivator.TryActivate(activity.SourceWindowHandle, activity.SourceProcessId);
+        _ = ActivitySourceLauncher.TryOpen(activity);
     }
 
     private static string BuildSource(ActivityEvent activity)
     {
+        if (activity.SourceKind == ActivitySourceKind.ChatGptWeb)
+        {
+            return $"ChatGPT Web · {activity.ChatLabel} · {activity.OccurredAt.ToLocalTime():HH:mm}";
+        }
+
         var terminal = string.IsNullOrWhiteSpace(activity.TerminalTitle)
             ? string.Empty
             : $" · {activity.TerminalTitle}";
