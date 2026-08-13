@@ -28,6 +28,16 @@ function Assert-Equal {
     Write-Host "PASS $Message"
 }
 
+function Invoke-HookWrapper {
+    param(
+        [Parameter(Mandatory = $true)][string]$Payload,
+        [Parameter(Mandatory = $true)][string]$WrapperPath
+    )
+
+    $command = "`"$WrapperPath`""
+    return $Payload | cmd.exe /D /S /C "`"$command`""
+}
+
 try {
     New-Item -ItemType Directory -Path $installDirectory -Force | Out-Null
     New-Item -ItemType Directory -Path $codexHome -Force | Out-Null
@@ -47,14 +57,14 @@ try {
         last_assistant_message = 'Stop hook JSON integration test'
         permission_mode = 'default'
     } | ConvertTo-Json -Compress
-    $stopOutput = $stopPayload | & $wrapperPath
+    $stopOutput = Invoke-HookWrapper -Payload $stopPayload -WrapperPath $wrapperPath
     Assert-Equal 0 $LASTEXITCODE 'installed Stop hook wrapper exits successfully'
     Assert-Equal '{"continue":true}' ([string]$stopOutput) 'installed Stop hook wrapper emits valid Codex JSON'
     $stopResult = $stopOutput | ConvertFrom-Json
     Assert-Equal $true $stopResult.continue 'Stop hook explicitly allows the completed turn to finish'
 
     $invalidStopPayload = '{"hook_event_name":"Stop"}'
-    $invalidStopOutput = $invalidStopPayload | & $wrapperPath
+    $invalidStopOutput = Invoke-HookWrapper -Payload $invalidStopPayload -WrapperPath $wrapperPath
     Assert-Equal 0 $LASTEXITCODE 'notification parsing failure never fails the Stop hook'
     Assert-Equal '{"continue":true}' ([string]$invalidStopOutput) 'failed notification delivery still emits valid Stop JSON'
 
@@ -66,7 +76,7 @@ try {
         prompt = 'Prompt hook output isolation test'
         permission_mode = 'default'
     } | ConvertTo-Json -Compress
-    $promptOutput = $promptPayload | & $wrapperPath
+    $promptOutput = Invoke-HookWrapper -Payload $promptPayload -WrapperPath $wrapperPath
     Assert-Equal 0 $LASTEXITCODE 'installed prompt hook wrapper exits successfully'
     Assert-Equal $null $promptOutput 'non-Stop hooks do not receive Stop-only JSON output'
 }
