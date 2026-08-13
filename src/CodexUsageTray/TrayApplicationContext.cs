@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using CodexUsageTray.Core;
+using ActivityEvent = CodexUsageTray.Core.ActivityEvent;
 
 namespace CodexUsageTray;
 
