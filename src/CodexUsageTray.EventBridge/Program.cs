@@ -12,6 +12,10 @@ internal static class Program
 {
     private const int MaximumNativeMessageBytes = 64 * 1024;
     private const string AllowedExtensionOrigin = "chrome-extension://mgeacoaocoijccehjlolcedfbhbaifhl/";
+    private static readonly JsonSerializerOptions NativeJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
 
     private static async Task<int> Main(string[] args)
     {
@@ -56,46 +60,98 @@ internal static class Program
     {
         await using var input = Console.OpenStandardInput();
         await using var output = Console.OpenStandardOutput();
-        while (true)
+        using var shutdown = new CancellationTokenSource();
+        using var outputGate = new SemaphoreSlim(1, 1);
+        var connectionId = Guid.NewGuid().ToString("D");
+        var commandServer = RunBrowserCommandServerAsync(
+            connectionId,
+            output,
+            outputGate,
+            shutdown.Token);
+        try
         {
-            var lengthBytes = new byte[sizeof(int)];
-            var lengthRead = await ReadExactlyOrEofAsync(input, lengthBytes);
-            if (lengthRead == 0)
+            while (true)
             {
-                return 0;
-            }
+                var lengthBytes = new byte[sizeof(int)];
+                var lengthRead = await ReadExactlyOrEofAsync(input, lengthBytes);
+                if (lengthRead == 0)
+                {
+                    return 0;
+                }
 
-            if (lengthRead != lengthBytes.Length)
-            {
-                return 1;
-            }
+                if (lengthRead != lengthBytes.Length)
+                {
+                    return 1;
+                }
 
-            var length = BinaryPrimitives.ReadInt32LittleEndian(lengthBytes);
-            if (length <= 0 || length > MaximumNativeMessageBytes)
-            {
-                return 1;
-            }
+                var length = BinaryPrimitives.ReadInt32LittleEndian(lengthBytes);
+                if (length <= 0 || length > MaximumNativeMessageBytes)
+                {
+                    return 1;
+                }
 
-            var payloadBytes = new byte[length];
-            if (await ReadExactlyOrEofAsync(input, payloadBytes) != length)
-            {
-                return 1;
-            }
+                var payloadBytes = new byte[length];
+                if (await ReadExactlyOrEofAsync(input, payloadBytes) != length)
+                {
+                    return 1;
+                }
 
-            var delivered = false;
+                var delivered = false;
+                try
+                {
+                    var activity = BrowserActivityEventParser.Parse(
+                        Encoding.UTF8.GetString(payloadBytes),
+                        DateTimeOffset.Now).WithBrowserConnection(connectionId);
+                    delivered = await DeliverAsync(activity);
+                }
+                catch
+                {
+                    // Invalid browser input must not crash the host or reach the tray app.
+                }
+
+                await WriteNativeMessageAsync(output, new { ok = delivered }, outputGate);
+            }
+        }
+        finally
+        {
+            shutdown.Cancel();
             try
             {
-                var activity = BrowserActivityEventParser.Parse(
-                    Encoding.UTF8.GetString(payloadBytes),
-                    DateTimeOffset.Now);
-                delivered = await DeliverAsync(activity);
+                await commandServer;
             }
-            catch
+            catch (OperationCanceledException)
             {
-                // Invalid browser input must not crash the host or reach the tray app.
             }
+        }
+    }
 
-            await WriteNativeResponseAsync(output, delivered);
+    private static async Task RunBrowserCommandServerAsync(
+        string connectionId,
+        Stream nativeOutput,
+        SemaphoreSlim outputGate,
+        CancellationToken cancellationToken)
+    {
+        var pipeName = ActivityPipeNames.GetBrowserCommandPipeName(connectionId);
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await using var pipe = new NamedPipeServerStream(
+                pipeName,
+                PipeDirection.In,
+                1,
+                PipeTransmissionMode.Byte,
+                PipeOptions.Asynchronous);
+            await pipe.WaitForConnectionAsync(cancellationToken);
+            using var reader = new StreamReader(
+                pipe,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                detectEncodingFromByteOrderMarks: false,
+                bufferSize: 1024,
+                leaveOpen: true);
+            var input = await reader.ReadLineAsync(cancellationToken);
+            if (input is not null && BrowserActivationCommand.TryParse(input, out var command))
+            {
+                await WriteNativeMessageAsync(nativeOutput, command, outputGate, cancellationToken);
+            }
         }
     }
 
@@ -116,14 +172,26 @@ internal static class Program
         return total;
     }
 
-    private static async Task WriteNativeResponseAsync(Stream output, bool delivered)
+    private static async Task WriteNativeMessageAsync<T>(
+        Stream output,
+        T value,
+        SemaphoreSlim outputGate,
+        CancellationToken cancellationToken = default)
     {
-        var payload = Encoding.UTF8.GetBytes(delivered ? "{\"ok\":true}" : "{\"ok\":false}");
+        var payload = JsonSerializer.SerializeToUtf8Bytes(value, NativeJsonOptions);
         var length = new byte[sizeof(int)];
         BinaryPrimitives.WriteInt32LittleEndian(length, payload.Length);
-        await output.WriteAsync(length);
-        await output.WriteAsync(payload);
-        await output.FlushAsync();
+        await outputGate.WaitAsync(cancellationToken);
+        try
+        {
+            await output.WriteAsync(length, cancellationToken);
+            await output.WriteAsync(payload, cancellationToken);
+            await output.FlushAsync(cancellationToken);
+        }
+        finally
+        {
+            outputGate.Release();
+        }
     }
 
     private static string? TryGetEventName(string input)

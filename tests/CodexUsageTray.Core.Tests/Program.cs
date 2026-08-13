@@ -495,6 +495,13 @@ internal static class Program
             JsonSerializer.Serialize(command)) ??
             throw new InvalidOperationException("browser command did not deserialize");
         Equal(command, restored, "browser command IPC round trip");
+        True(BrowserActivationCommand.TryParse(JsonSerializer.Serialize(command), out var parsed),
+            "valid activation command is accepted");
+        Equal(command, parsed, "validated activation command");
+        True(!BrowserActivationCommand.TryParse(
+                "{\"action\":\"activate\",\"url\":\"https://example.com/c/stolen\",\"tabId\":17,\"windowId\":3}",
+                out _),
+            "unsafe activation command is rejected");
         return Task.CompletedTask;
     }
 
