@@ -19,6 +19,19 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Validate ChatGPT browser extension
+        shell: pwsh
+        run: |
+          $manifest = Get-Content .\browser-extension\manifest.json -Raw | ConvertFrom-Json
+          if ($manifest.manifest_version -ne 3 -or
+              $manifest.permissions -notcontains 'nativeMessaging' -or
+              $manifest.host_permissions.Count -ne 1 -or
+              $manifest.host_permissions[0] -ne 'https://chatgpt.com/*') {
+            throw 'Browser extension permissions or host scope are invalid.'
+          }
+          node --check .\browser-extension\background.js
+          node --check .\browser-extension\content.js
+
       - name: Test Windows PowerShell compatibility and installers
         shell: pwsh
         run: |
@@ -43,5 +56,13 @@ jobs:
           dotnet run --configuration Release `
               --project .\tests\CodexUsageTray.Windows.Tests\CodexUsageTray.Windows.Tests.csproj
           if ($LASTEXITCODE -ne 0) {
-              throw "Windows UI regression tests failed with exit code $LASTEXITCODE."
+            throw "Windows UI regression tests failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Build tray and event bridge
+        shell: pwsh
+        run: |
+          dotnet build .\CodexUsageTray.sln --configuration Release
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows solution build failed with exit code $LASTEXITCODE."
           }
