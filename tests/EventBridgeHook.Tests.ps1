@@ -67,14 +67,16 @@ try {
     } | ConvertTo-Json -Compress
     $stopOutput = Invoke-HookWrapper -Payload $stopPayload -WrapperPath $wrapperPath
     Assert-Equal 0 $LASTEXITCODE 'installed Stop hook wrapper exits successfully'
-    Assert-Equal '{"continue":true}' ([string]$stopOutput) 'installed Stop hook wrapper emits valid Codex JSON'
-    $stopResult = $stopOutput | ConvertFrom-Json
-    Assert-Equal $true $stopResult.continue 'Stop hook explicitly allows the completed turn to finish'
+    Assert-Equal $null $stopOutput 'installed Stop hook wrapper emits no parser-sensitive output'
+
+    $directStopOutput = $stopPayload | & $installedBridge --hook
+    Assert-Equal 0 $LASTEXITCODE 'direct Stop bridge invocation exits successfully'
+    Assert-Equal $null $directStopOutput 'direct Stop bridge invocation emits no parser-sensitive output'
 
     $invalidStopPayload = '{"hook_event_name":"Stop"}'
     $invalidStopOutput = Invoke-HookWrapper -Payload $invalidStopPayload -WrapperPath $wrapperPath
     Assert-Equal 0 $LASTEXITCODE 'notification parsing failure never fails the Stop hook'
-    Assert-Equal '{"continue":true}' ([string]$invalidStopOutput) 'failed notification delivery still emits valid Stop JSON'
+    Assert-Equal $null $invalidStopOutput 'failed notification delivery still emits no output'
 
     $promptPayload = [ordered]@{
         session_id = 'integration-prompt'
@@ -100,4 +102,4 @@ finally {
     }
 }
 
-Write-Host '7 EventBridge Hook integration assertions passed'
+Write-Host '8 EventBridge Hook integration assertions passed'
