@@ -68,7 +68,7 @@ public sealed class CodexAppServerClient : IAsyncDisposable
 
     private bool IsTransportFailure(Exception exception) =>
         exception is EndOfStreamException or ObjectDisposedException ||
-        exception is IOException and not InvalidDataException ||
+        exception is IOException ||
         _process is { HasExited: true };
 
     private async Task<JsonRpcConnection> EnsureStartedAsync(CancellationToken cancellationToken)
@@ -93,7 +93,7 @@ public sealed class CodexAppServerClient : IAsyncDisposable
                 throw new CodexCliNotFoundException(_codexExecutable, exception);
             }
 
-            _stderrDrainTask = _process.StandardError.CopyToAsync(TextWriter.Null);
+            _stderrDrainTask = _process.StandardError.ReadToEndAsync();
             _connection = new JsonRpcConnection(_process.StandardOutput, _process.StandardInput);
             await _connection.SendRequestAsync(
                 "initialize",
@@ -103,7 +103,7 @@ public sealed class CodexAppServerClient : IAsyncDisposable
                     {
                         name = "codex_usage_tray",
                         title = "Codex Usage Tray",
-                        version = "1.1.0"
+                        version = "1.1.1"
                     }
                 },
                 cancellationToken).ConfigureAwait(false);
