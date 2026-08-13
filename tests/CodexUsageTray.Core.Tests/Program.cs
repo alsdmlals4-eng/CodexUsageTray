@@ -29,6 +29,7 @@ internal static class Program
             ("user prompt hook becomes running activity", TestPromptActivity),
             ("permission hook becomes approval activity", TestPermissionActivity),
             ("stop hook becomes completed activity", TestCompletedActivity),
+            ("stop hook emits an explicit successful continuation result", TestStopHookSuccessOutput),
             ("unknown hook input is rejected", TestUnknownActivity),
             ("activity store updates a turn and keeps newest first", TestActivityStore),
             ("activity event survives IPC JSON round trip", TestActivitySerialization),
@@ -331,6 +332,19 @@ internal static class Program
         Throws<InvalidDataException>(() => ActivityEventParser.ParseHook(
             "{\"session_id\":\"thr_x\",\"cwd\":\"C:/x\",\"hook_event_name\":\"PostToolUse\"}",
             ObservedAt));
+        return Task.CompletedTask;
+    }
+
+    private static Task TestStopHookSuccessOutput()
+    {
+        Equal("{\"continue\":true}", HookProtocolOutput.GetSuccessJson("Stop"),
+            "Codex 0.147.0 Stop output must satisfy the documented JSON schema");
+        Equal(string.Empty, HookProtocolOutput.GetSuccessJson("UserPromptSubmit"),
+            "prompt hooks must not receive Stop-only output");
+        Equal(string.Empty, HookProtocolOutput.GetSuccessJson("PermissionRequest"),
+            "permission hooks must not receive Stop-only output");
+        Equal(string.Empty, HookProtocolOutput.GetSuccessJson(null),
+            "missing event names must not emit misleading output");
         return Task.CompletedTask;
     }
 

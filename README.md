@@ -145,6 +145,11 @@ codex login
 3. `%USERPROFILE%\.codex\hooks.json`에 `invoke-codex-hook.cmd`가 있고 `timeout`이 `15`인지 확인합니다.
 4. 트레이 앱 우클릭 → **작업 알림 기록**을 확인합니다.
 
+Codex에 `Stop hook (failed): hook returned invalid stop hook JSON output`이 표시되면
+`v1.2.1` 이하의 완료 응답 형식 문제입니다. 최신 버전으로 다시 설치하고 Codex를
+완전히 재시작한 뒤 `/hooks`에서 변경된 Hook을 다시 신뢰하세요. 정상 상태에서는 짧은
+작업이 끝날 때 `Stop hook (completed)`가 표시되고 화면 상단에 완료 팝업이 나타납니다.
+
 웹 ChatGPT만 감지되지 않으면 확장 관리 화면에서 확장이 켜져 있는지 확인하고
 `chatgpt.com` 탭을 새로고침하세요. 확장 오류에 `Native host has exited`가 보이면
 한 줄 설치 명령을 다시 실행해 네이티브 연결을 재등록합니다.
@@ -189,6 +194,7 @@ Hook을 다시 병합하려면 설치 폴더에서 다음 명령을 실행합니
 - [ ] 팝업이 다른 앱보다 위에 있고 클릭하기 전까지 사라지지 않는다.
 - [ ] 팝업이 승인 여부를 자동으로 바꾸지 않고 원래 Codex 승인 화면이 유지된다.
 - [ ] 턴이 끝나면 마지막 응답이 포함된 `작업 완료` 팝업이 나타난다.
+- [ ] Codex 0.147.0에서 턴 종료 후 `Stop hook (completed)`가 표시되고 invalid JSON 오류가 없다.
 - [ ] 팝업 클릭 시 원본 터미널을 찾으면 앞으로 가져오고, 못 찾으면 기록 창이 열린다.
 - [ ] ChatGPT 웹 확장 로드 후 응답이 실제로 끝난 다음에만 완료 팝업이 나타난다.
 - [ ] ChatGPT 웹 완료 팝업을 누르면 새 탭 수가 늘지 않고 감지했던 기존 탭이 앞으로 온다.

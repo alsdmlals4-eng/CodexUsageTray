@@ -47,10 +47,7 @@ internal static class Program
         }
         finally
         {
-            if (string.Equals(eventName, "Stop", StringComparison.Ordinal))
-            {
-                Console.Out.Write("{}");
-            }
+            Console.Out.Write(HookProtocolOutput.GetSuccessJson(eventName));
         }
 
         return 0;
