@@ -268,7 +268,7 @@ public static class ProcessLockHolder
 finally {
     if ($null -ne $lockingBridge -and -not $lockingBridge.HasExited) {
         Stop-Process -Id $lockingBridge.Id -Force -ErrorAction SilentlyContinue
-        $lockingBridge.WaitForExit(5000)
+        [void]$lockingBridge.WaitForExit(5000)
     }
     if (Test-Path -LiteralPath $testRoot) {
         Remove-Item -LiteralPath $testRoot -Recurse -Force

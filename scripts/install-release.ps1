@@ -23,13 +23,96 @@ $installName = Split-Path -Leaf $resolvedInstall
 $stageDirectory = Join-Path $installParent "$installName.update-$PID"
 $backupDirectory = Join-Path $installParent "$installName.backup-$PID"
 $installedExecutable = Join-Path $resolvedInstall 'CodexUsageTray.exe'
+$installedBridge = Join-Path $resolvedInstall 'CodexUsageTray.EventBridge.exe'
+$installedProcessPaths = @($installedExecutable, $installedBridge)
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $runValueName = 'CodexUsageTray'
-$runningProcesses = @()
+$trayWasRunning = $false
 $replacementActivated = $false
 $committed = $false
 $startupValueChanged = $false
 $previousStartupValue = $null
+
+function Get-InstalledProcesses {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$ExecutablePaths
+    )
+
+    $normalizedPaths = @($ExecutablePaths | ForEach-Object {
+        [System.IO.Path]::GetFullPath($_)
+    })
+    $processNames = @($normalizedPaths | ForEach-Object {
+        [System.IO.Path]::GetFileNameWithoutExtension($_)
+    })
+
+    return @(Get-Process -Name $processNames -ErrorAction SilentlyContinue | Where-Object {
+        try {
+            $processPath = [System.IO.Path]::GetFullPath($_.Path)
+            @($normalizedPaths | Where-Object {
+                [string]::Equals(
+                    $_,
+                    $processPath,
+                    [System.StringComparison]::OrdinalIgnoreCase)
+            }).Count -gt 0
+        }
+        catch {
+            $false
+        }
+    })
+}
+
+function Stop-InstalledProcesses {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$ExecutablePaths,
+        [int]$TimeoutSeconds = 5
+    )
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        $processes = @(Get-InstalledProcesses -ExecutablePaths $ExecutablePaths)
+        foreach ($process in $processes) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+
+        if ($processes.Count -gt 0) {
+            Start-Sleep -Milliseconds 100
+        }
+        $remaining = @(Get-InstalledProcesses -ExecutablePaths $ExecutablePaths)
+    } while ($remaining.Count -gt 0 -and [DateTime]::UtcNow -lt $deadline)
+
+    if ($remaining.Count -gt 0) {
+        throw '실행 중인 Codex Usage Tray 구성 요소를 종료하지 못했습니다.'
+    }
+}
+
+function Move-InstallDirectory {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [Parameter(Mandatory = $true)][string[]]$ExecutablePaths,
+        [int]$TimeoutSeconds = 5
+    )
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ($true) {
+        try {
+            Move-Item -LiteralPath $Source -Destination $Destination
+            return
+        }
+        catch {
+            $isRetryable = $_.Exception -is [System.IO.IOException] -or
+                $_.Exception -is [System.UnauthorizedAccessException]
+            if (-not $isRetryable -or [DateTime]::UtcNow -ge $deadline) {
+                throw
+            }
+
+            Stop-InstalledProcesses -ExecutablePaths $ExecutablePaths -TimeoutSeconds 1
+            Start-Sleep -Milliseconds 100
+        }
+    }
+}
 
 foreach ($fileName in $requiredFiles) {
     $sourcePath = Join-Path $resolvedPackage $fileName
@@ -51,41 +134,7 @@ foreach ($temporaryDirectory in @($stageDirectory, $backupDirectory)) {
     }
 }
 
-if (Test-Path -LiteralPath $resolvedInstall) {
-    $runningProcesses = @(Get-Process -Name 'CodexUsageTray' -ErrorAction SilentlyContinue | Where-Object {
-        try {
-            $_.Path -and [string]::Equals(
-                [System.IO.Path]::GetFullPath($_.Path),
-                $installedExecutable,
-                [System.StringComparison]::OrdinalIgnoreCase)
-        }
-        catch {
-            $false
-        }
-    })
-}
-
 try {
-    foreach ($process in $runningProcesses) {
-        Stop-Process -Id $process.Id -Force
-    }
-
-    if ($runningProcesses.Count -gt 0) {
-        $deadline = [DateTime]::UtcNow.AddSeconds(5)
-        do {
-            $remaining = @($runningProcesses | Where-Object {
-                Get-Process -Id $_.Id -ErrorAction SilentlyContinue
-            })
-            if ($remaining.Count -gt 0) {
-                Start-Sleep -Milliseconds 100
-            }
-        } while ($remaining.Count -gt 0 -and [DateTime]::UtcNow -lt $deadline)
-
-        if ($remaining.Count -gt 0) {
-            throw '실행 중인 Codex Usage Tray를 종료하지 못했습니다.'
-        }
-    }
-
     New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
     foreach ($fileName in $requiredFiles) {
         Copy-Item `
@@ -102,7 +151,23 @@ try {
     }
 
     if (Test-Path -LiteralPath $resolvedInstall) {
-        Move-Item -LiteralPath $resolvedInstall -Destination $backupDirectory
+        $runningProcesses = @(Get-InstalledProcesses -ExecutablePaths $installedProcessPaths)
+        $trayWasRunning = @($runningProcesses | Where-Object {
+            try {
+                [string]::Equals(
+                    [System.IO.Path]::GetFullPath($_.Path),
+                    $installedExecutable,
+                    [System.StringComparison]::OrdinalIgnoreCase)
+            }
+            catch {
+                $false
+            }
+        }).Count -gt 0
+        Stop-InstalledProcesses -ExecutablePaths $installedProcessPaths
+        Move-InstallDirectory `
+            -Source $resolvedInstall `
+            -Destination $backupDirectory `
+            -ExecutablePaths $installedProcessPaths
     }
 
     Move-Item -LiteralPath $stageDirectory -Destination $resolvedInstall
@@ -166,7 +231,7 @@ catch {
         Move-Item -LiteralPath $backupDirectory -Destination $resolvedInstall
     }
 
-    if ($runningProcesses.Count -gt 0 -and (Test-Path -LiteralPath $installedExecutable)) {
+    if ($trayWasRunning -and (Test-Path -LiteralPath $installedExecutable)) {
         Start-Process -FilePath $installedExecutable
     }
 
