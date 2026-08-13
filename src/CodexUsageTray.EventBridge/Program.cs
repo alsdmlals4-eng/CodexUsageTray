@@ -45,6 +45,7 @@ internal static class Program
             // An alerting failure must never change the Codex operation or approval decision.
         }
 
+        Console.Out.Write("{\"continue\":true}");
         return 0;
     }
 
