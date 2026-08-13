@@ -10,6 +10,10 @@ $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USER
 $hooksPath = Join-Path $codexHome 'hooks.json'
 $marker = 'CodexUsageTray.EventBridge.exe'
 $command = "`"$resolvedBridge`" --hook"
+$nativeHostName = 'com.alsdmlals4.codexusagetray'
+$extensionOrigin = 'chrome-extension://mgeacoaocoijccehjlolcedfbhbaifhl/'
+$installDirectory = Split-Path -Parent $resolvedBridge
+$nativeManifestPath = Join-Path $installDirectory 'chatgpt-native-host.json'
 
 New-Item -ItemType Directory -Path $codexHome -Force | Out-Null
 
@@ -105,3 +109,25 @@ $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
 Move-Item -LiteralPath $temporaryPath -Destination $hooksPath -Force
 
 Write-Host "Codex 작업 알림 Hook을 병합했습니다: $hooksPath"
+
+$nativeManifest = [ordered]@{
+    name = $nativeHostName
+    description = 'Codex Usage Tray ChatGPT activity bridge'
+    path = $resolvedBridge
+    type = 'stdio'
+    allowed_origins = @($extensionOrigin)
+} | ConvertTo-Json -Depth 5
+[System.IO.File]::WriteAllText($nativeManifestPath, $nativeManifest, $utf8WithoutBom)
+
+foreach ($nativeHostKey in @(
+        "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$nativeHostName",
+        "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\$nativeHostName")) {
+    New-Item -Path $nativeHostKey -Force | Out-Null
+    Set-Item -Path $nativeHostKey -Value $nativeManifestPath
+}
+
+Write-Host "ChatGPT 웹 네이티브 연결을 등록했습니다: $nativeManifestPath"
+$extensionDirectory = Join-Path $installDirectory 'browser-extension'
+if (Test-Path -LiteralPath $extensionDirectory -PathType Container) {
+    Write-Host "Chrome/Edge 확장 관리 화면에서 이 폴더를 한 번 로드하세요: $extensionDirectory"
+}

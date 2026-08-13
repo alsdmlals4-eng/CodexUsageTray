@@ -26,6 +26,19 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Validate ChatGPT browser extension
+        shell: pwsh
+        run: |
+          $manifest = Get-Content .\browser-extension\manifest.json -Raw | ConvertFrom-Json
+          if ($manifest.manifest_version -ne 3 -or
+              $manifest.permissions -notcontains 'nativeMessaging' -or
+              $manifest.host_permissions.Count -ne 1 -or
+              $manifest.host_permissions[0] -ne 'https://chatgpt.com/*') {
+            throw 'Browser extension permissions or host scope are invalid.'
+          }
+          node --check .\browser-extension\background.js
+          node --check .\browser-extension\content.js
+
       - name: Resolve release version
         shell: pwsh
         env:
@@ -64,7 +77,16 @@ jobs:
           dotnet run --configuration Release `
               --project .\tests\CodexUsageTray.Core.Tests\CodexUsageTray.Core.Tests.csproj
           if ($LASTEXITCODE -ne 0) {
-              throw "Core tests failed with exit code $LASTEXITCODE."
+            throw "Core tests failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Test Windows UI regressions
+        shell: pwsh
+        run: |
+          dotnet run --configuration Release `
+              --project .\tests\CodexUsageTray.Windows.Tests\CodexUsageTray.Windows.Tests.csproj
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows UI regression tests failed with exit code $LASTEXITCODE."
           }
 
       - name: Publish Windows executables
@@ -112,6 +134,10 @@ jobs:
                   '.\scripts\remove-integration.ps1')) {
               Copy-Item -LiteralPath $scriptPath -Destination $packageDirectory
           }
+          Copy-Item `
+              -LiteralPath .\browser-extension `
+              -Destination (Join-Path $packageDirectory 'browser-extension') `
+              -Recurse
 
           & .\scripts\install-release.ps1 `
               -PackageDirectory $packageDirectory `
@@ -124,7 +150,10 @@ jobs:
                   'CodexUsageTray.EventBridge.exe',
                   'install-release.ps1',
                   'setup-integration.ps1',
-                  'remove-integration.ps1')) {
+                  'remove-integration.ps1',
+                  'browser-extension\manifest.json',
+                  'browser-extension\background.js',
+                  'browser-extension\content.js')) {
               $installedFile = Join-Path $smokeDirectory $requiredFile
               if (-not (Test-Path -LiteralPath $installedFile -PathType Leaf)) {
                   throw "Smoke install did not produce $requiredFile."

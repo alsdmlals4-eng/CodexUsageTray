@@ -15,6 +15,7 @@ $requiredFiles = @(
     'remove-integration.ps1',
     'install-release.ps1'
 )
+$requiredDirectories = @('browser-extension')
 $resolvedPackage = (Resolve-Path -LiteralPath $PackageDirectory).Path
 $resolvedInstall = [System.IO.Path]::GetFullPath($InstallDirectory)
 $installParent = Split-Path -Parent $resolvedInstall
@@ -34,6 +35,12 @@ foreach ($fileName in $requiredFiles) {
     $sourcePath = Join-Path $resolvedPackage $fileName
     if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
         throw "배포 패키지에 필요한 파일이 없습니다: $fileName"
+    }
+}
+foreach ($directoryName in $requiredDirectories) {
+    $sourcePath = Join-Path $resolvedPackage $directoryName
+    if (-not (Test-Path -LiteralPath $sourcePath -PathType Container)) {
+        throw "배포 패키지에 필요한 폴더가 없습니다: $directoryName"
     }
 }
 
@@ -84,6 +91,13 @@ try {
         Copy-Item `
             -LiteralPath (Join-Path $resolvedPackage $fileName) `
             -Destination (Join-Path $stageDirectory $fileName) `
+            -Force
+    }
+    foreach ($directoryName in $requiredDirectories) {
+        Copy-Item `
+            -LiteralPath (Join-Path $resolvedPackage $directoryName) `
+            -Destination (Join-Path $stageDirectory $directoryName) `
+            -Recurse `
             -Force
     }
 
@@ -175,4 +189,5 @@ if (-not $DoNotLaunch) {
 Write-Host "설치 완료: $installedExecutable"
 if (-not $SkipCodexHooks) {
     Write-Host 'Codex를 다시 시작한 뒤 /hooks에서 Codex Usage Tray Hook을 검토하고 신뢰하세요.'
+    Write-Host '웹 ChatGPT 알림은 Chrome/Edge 확장 관리 화면에서 설치 폴더의 browser-extension을 한 번 로드하세요.'
 }

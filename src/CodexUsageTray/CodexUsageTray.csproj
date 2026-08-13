@@ -19,4 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="../CodexUsageTray.Core/CodexUsageTray.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CodexUsageTray.Windows.Tests" />
+  </ItemGroup>
 </Project>

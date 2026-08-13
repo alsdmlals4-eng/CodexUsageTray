@@ -6,6 +6,8 @@ $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USER
 $hooksPath = Join-Path $codexHome 'hooks.json'
 $marker = 'CodexUsageTray.EventBridge.exe'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$nativeHostName = 'com.alsdmlals4.codexusagetray'
+$installDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Remove-UsageTrayHandlers {
     param([object[]]$Groups)
@@ -74,6 +76,16 @@ try {
 }
 finally {
     Remove-ItemProperty -Path $runKey -Name 'CodexUsageTray' -ErrorAction SilentlyContinue
+    foreach ($nativeHostKey in @(
+            "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$nativeHostName",
+            "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\$nativeHostName")) {
+        Remove-Item -LiteralPath $nativeHostKey -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Remove-Item `
+        -LiteralPath (Join-Path $installDirectory 'chatgpt-native-host.json') `
+        -Force `
+        -ErrorAction SilentlyContinue
 }
 
-Write-Host 'Codex Usage Tray 자동 시작 항목을 제거했습니다.'
+Write-Host 'Codex Usage Tray 자동 시작 항목과 ChatGPT 웹 연결을 제거했습니다.'

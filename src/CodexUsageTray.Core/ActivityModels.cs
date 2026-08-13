@@ -7,6 +7,12 @@ public enum ActivityStatus
     Completed
 }
 
+public enum ActivitySourceKind
+{
+    CodexTerminal,
+    ChatGptWeb
+}
+
 public sealed record ActivityEvent(
     string SessionId,
     string? TurnId,
@@ -19,7 +25,9 @@ public sealed record ActivityEvent(
     DateTimeOffset OccurredAt,
     int SourceProcessId = 0,
     long SourceWindowHandle = 0,
-    string? TerminalTitle = null)
+    string? TerminalTitle = null,
+    ActivitySourceKind SourceKind = ActivitySourceKind.CodexTerminal,
+    string? SourceUri = null)
 {
     public string ActivityKey => $"{SessionId}\u001f{TurnId ?? string.Empty}";
 

@@ -126,6 +126,18 @@ internal sealed class UsageFlyoutForm : Form
         Hide();
     }
 
+    protected override void OnFormClosing(FormClosingEventArgs eventArgs)
+    {
+        if (eventArgs.CloseReason == CloseReason.UserClosing)
+        {
+            eventArgs.Cancel = true;
+            Hide();
+            return;
+        }
+
+        base.OnFormClosing(eventArgs);
+    }
+
     private static Control CreateQuotaCard(QuotaWindow window)
     {
         var row = UsagePresentation.CreateDisplayRow(window, TimeZoneInfo.Local);
