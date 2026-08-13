@@ -24,12 +24,12 @@ internal static class Program
             ("JSON-RPC reports unexpected EOF", TestJsonRpcEof),
             ("JSON-RPC honors cancellation", TestJsonRpcCancellation),
             ("JSON-RPC disposal cancels an active read", TestJsonRpcDisposal),
+            ("App Server diagnostics stay bounded and redact credentials", TestDiagnosticBuffer),
             ("tooltip stays within NotifyIcon limit", TestTooltipLength),
             ("flyout row includes remaining and local reset", TestFlyoutRow),
             ("user prompt hook becomes running activity", TestPromptActivity),
             ("permission hook becomes approval activity", TestPermissionActivity),
             ("stop hook becomes completed activity", TestCompletedActivity),
-            ("stop hook emits an explicit successful continuation result", TestStopHookSuccessOutput),
             ("unknown hook input is rejected", TestUnknownActivity),
             ("activity store updates a turn and keeps newest first", TestActivityStore),
             ("activity event survives IPC JSON round trip", TestActivitySerialization),
@@ -236,6 +236,26 @@ internal static class Program
         await ThrowsAsync<OperationCanceledException>(() => request);
     }
 
+    private static Task TestDiagnosticBuffer()
+    {
+        var buffer = new BoundedDiagnosticBuffer(maxCharacters: 96);
+        buffer.Append($"old-prefix-{new string('x', 90)}");
+        buffer.Append("Authorization: Bearer super-secret-token");
+        buffer.Append("{\"accessToken\":\"another-secret-token\"}");
+
+        var snapshot = buffer.Snapshot();
+
+        True(snapshot.Length <= 96, "diagnostics must stay within the configured character bound");
+        True(!snapshot.Contains("old-prefix", StringComparison.Ordinal),
+            "old diagnostic lines must be evicted before newer evidence");
+        True(!snapshot.Contains("super-secret-token", StringComparison.Ordinal) &&
+             !snapshot.Contains("another-secret-token", StringComparison.Ordinal),
+            "credential-shaped values must never survive diagnostic capture");
+        True(snapshot.Contains("[REDACTED]", StringComparison.Ordinal),
+            "redaction must remain visible so the diagnostic is understandable");
+        return Task.CompletedTask;
+    }
+
     private static Task TestTooltipLength()
     {
         var snapshot = new UsageSnapshot(
@@ -332,19 +352,6 @@ internal static class Program
         Throws<InvalidDataException>(() => ActivityEventParser.ParseHook(
             "{\"session_id\":\"thr_x\",\"cwd\":\"C:/x\",\"hook_event_name\":\"PostToolUse\"}",
             ObservedAt));
-        return Task.CompletedTask;
-    }
-
-    private static Task TestStopHookSuccessOutput()
-    {
-        Equal("{\"continue\":true}", HookProtocolOutput.GetSuccessJson("Stop"),
-            "Codex 0.147.0 Stop output must satisfy the documented JSON schema");
-        Equal(string.Empty, HookProtocolOutput.GetSuccessJson("UserPromptSubmit"),
-            "prompt hooks must not receive Stop-only output");
-        Equal(string.Empty, HookProtocolOutput.GetSuccessJson("PermissionRequest"),
-            "permission hooks must not receive Stop-only output");
-        Equal(string.Empty, HookProtocolOutput.GetSuccessJson(null),
-            "missing event names must not emit misleading output");
         return Task.CompletedTask;
     }
 

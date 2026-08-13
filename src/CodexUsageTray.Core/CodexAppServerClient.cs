@@ -8,6 +8,7 @@ public sealed class CodexAppServerClient : IAsyncDisposable
 {
     private readonly string _codexExecutable;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
+    private readonly BoundedDiagnosticBuffer _diagnostics = new();
     private Process? _process;
     private JsonRpcConnection? _connection;
     private Task? _stderrDrainTask;
@@ -93,7 +94,8 @@ public sealed class CodexAppServerClient : IAsyncDisposable
                 throw new CodexCliNotFoundException(_codexExecutable, exception);
             }
 
-            _stderrDrainTask = _process.StandardError.ReadToEndAsync();
+            _diagnostics.Clear();
+            _stderrDrainTask = DrainStandardErrorAsync(_process.StandardError);
             _connection = new JsonRpcConnection(_process.StandardOutput, _process.StandardInput);
             await _connection.SendRequestAsync(
                 "initialize",
@@ -118,6 +120,25 @@ public sealed class CodexAppServerClient : IAsyncDisposable
         finally
         {
             _lifecycleGate.Release();
+        }
+    }
+
+    public string GetDiagnosticSummary() => _diagnostics.Snapshot();
+
+    private async Task DrainStandardErrorAsync(StreamReader reader)
+    {
+        try
+        {
+            while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
+            {
+                _diagnostics.Append(line);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
         }
     }
 

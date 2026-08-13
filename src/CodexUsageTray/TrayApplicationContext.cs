@@ -49,6 +49,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add("Codex 로그인", null, (_, _) => OpenCodexLogin());
         menu.Items.Add("ChatGPT 알림 설정 안내", null, (_, _) => OpenChatGptNotificationGuide());
         menu.Items.Add("웹 ChatGPT 확장 폴더 열기", null, (_, _) => OpenBrowserExtensionFolder());
+        menu.Items.Add("진단 로그 폴더 열기", null, (_, _) => OpenDiagnosticLogDirectory());
         _startupItem = new ToolStripMenuItem("Windows 시작 시 실행")
         {
             Checked = SafeReadStartupState(),
@@ -117,13 +118,16 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
         catch (OperationCanceledException) when (!_shutdown.IsCancellationRequested)
         {
-            SetError("새로고침 시간이 초과되었습니다.", UsageFailureKind.Transient);
+            var exception = new TimeoutException("Codex App Server 새로고침 시간이 초과되었습니다.");
+            RecordDiagnostic(exception);
+            SetError("새로고침 시간이 초과되었습니다. 진단 로그를 확인하세요.", UsageFailureKind.Transient);
         }
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
         {
         }
         catch (Exception exception)
         {
+            RecordDiagnostic(exception);
             var failure = ClassifyFailure(exception);
             SetError(failure.Message, failure.Kind);
         }
@@ -315,7 +319,31 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private static UsageFailure ClassifyFailure(Exception exception)
+    private static void OpenDiagnosticLogDirectory()
+    {
+        try
+        {
+            DiagnosticLog.OpenDirectory();
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(exception.Message, "진단 로그", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void RecordDiagnostic(Exception exception)
+    {
+        try
+        {
+            DiagnosticLog.Append(exception, _client.GetDiagnosticSummary());
+        }
+        catch
+        {
+            // Diagnostic logging must never turn a refresh failure into an app failure.
+        }
+    }
+
+    internal static UsageFailure ClassifyFailure(Exception exception)
     {
         if (exception is CodexCliNotFoundException)
         {
@@ -346,7 +374,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         return new UsageFailure(
             UsageFailureKind.Transient,
-            "Codex 사용량을 가져오지 못했습니다. 네트워크 연결을 확인하세요.");
+            "Codex App Server 연결에 실패했습니다. 트레이 메뉴에서 진단 로그를 확인하세요.");
     }
 
     private async Task ShutdownAsync()
@@ -417,9 +445,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         base.ExitThreadCore();
     }
 
-    private sealed record UsageFailure(UsageFailureKind Kind, string Message);
+    internal sealed record UsageFailure(UsageFailureKind Kind, string Message);
 
-    private enum UsageFailureKind
+    internal enum UsageFailureKind
     {
         Transient,
         Authentication,

@@ -16,7 +16,9 @@ internal static class Program
             UserClosingFlyoutHidesWithoutDisposing();
             PopupQueuePersistsUntilClickAndOpensEveryActivity();
             BrowserActivatorSendsExactSourceIdentity();
-            Console.WriteLine("3 Windows UI regression tests passed");
+            UsageFailureDoesNotAssumeTheNetworkIsBroken();
+            DiagnosticLogRedactsCredentialShapedText();
+            Console.WriteLine("5 Windows UI regression tests passed");
             return 0;
         }
         catch (Exception exception)
@@ -97,6 +99,44 @@ internal static class Program
             "the emitted activation payload must be valid");
         Assert(command?.TabId == 117 && command.WindowId == 9,
             "the exact source browser tab and window identity must be preserved");
+    }
+
+    private static void UsageFailureDoesNotAssumeTheNetworkIsBroken()
+    {
+        var failure = TrayApplicationContext.ClassifyFailure(
+            new IOException("app-server transport closed"));
+
+        Assert(!failure.Message.Contains("네트워크", StringComparison.Ordinal),
+            "an unknown App Server failure must not be mislabeled as a network outage");
+        Assert(failure.Message.Contains("진단 로그", StringComparison.Ordinal),
+            "an unknown App Server failure must point to the actionable diagnostic log");
+    }
+
+    private static void DiagnosticLogRedactsCredentialShapedText()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"CodexUsageTray-Log-{Guid.NewGuid():N}");
+        var path = Path.Combine(directory, "diagnostics.log");
+        try
+        {
+            DiagnosticLog.Write(
+                path,
+                new InvalidOperationException("Authorization: Bearer exception-secret"),
+                "{\"accessToken\":\"stderr-secret\"}");
+            var text = File.ReadAllText(path);
+
+            Assert(!text.Contains("exception-secret", StringComparison.Ordinal) &&
+                   !text.Contains("stderr-secret", StringComparison.Ordinal),
+                "the persisted diagnostic log must not contain credential-shaped values");
+            Assert(text.Contains("[REDACTED]", StringComparison.Ordinal),
+                "the persisted log must identify that sensitive text was redacted");
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
     }
 
     private static ActivityEvent CreateActivity(
