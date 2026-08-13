@@ -38,7 +38,7 @@ function Invoke-HookWrapper {
     try {
         $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($inputPath, $Payload, $utf8WithoutBom)
-        $command = "call `"$WrapperPath`" < `"$inputPath`""
+        $command = "call `"$WrapperPath`" < `"$inputPath`" 2>&1"
         return cmd.exe /D /S /C $command
     }
     finally {
@@ -89,6 +89,11 @@ try {
     $promptOutput = Invoke-HookWrapper -Payload $promptPayload -WrapperPath $wrapperPath
     Assert-Equal 0 $LASTEXITCODE 'installed prompt hook wrapper exits successfully'
     Assert-Equal $null $promptOutput 'non-Stop hooks do not receive Stop-only JSON output'
+
+    Copy-Item -LiteralPath $env:ComSpec -Destination $installedBridge -Force
+    $noisyHelperOutput = Invoke-HookWrapper -Payload $stopPayload -WrapperPath $wrapperPath
+    Assert-Equal 0 $LASTEXITCODE 'hook wrapper isolates a noisy helper without failing Codex'
+    Assert-Equal $null $noisyHelperOutput 'hook wrapper suppresses helper stdout and stderr'
 }
 finally {
     $env:CODEX_HOME = $previousCodexHome
@@ -102,4 +107,4 @@ finally {
     }
 }
 
-Write-Host '8 EventBridge Hook integration assertions passed'
+Write-Host '10 EventBridge Hook integration assertions passed'
