@@ -91,7 +91,7 @@ artifacts\win-x64\CodexUsageTray.EventBridge.exe
 - 아이콘을 오른쪽 클릭하고 **새로고침**을 누르면 즉시 다시 확인합니다.
 - **Windows 시작 시 실행**을 선택하거나 해제하면 현재 사용자에게만 적용됩니다.
 - 회색 `?`는 Codex CLI를 찾지 못했다는 뜻입니다.
-- 회색 `!`는 로그인 또는 네트워크 확인이 필요하다는 뜻입니다.
+- 회색 `!`는 로그인 또는 Codex App Server 연결 확인이 필요하다는 뜻입니다.
 - **작업 알림 기록**에서 진행 중·승인 대기·완료 턴을 확인할 수 있습니다.
 - 승인·완료 팝업을 클릭하면 원본 터미널을 찾을 수 있을 때 해당 창을 앞으로 가져옵니다.
 
@@ -136,7 +136,12 @@ codex login
 
 1. 아이콘 우클릭 → **Codex 로그인**을 실행합니다.
 2. 로그인이 끝나면 아이콘 우클릭 → **새로고침**을 누릅니다.
-3. 계속 실패하면 PowerShell에서 `codex`가 정상 실행되는지 확인합니다.
+3. 계속 실패하면 아이콘 우클릭 → **진단 로그 폴더 열기**를 누릅니다.
+4. `%LOCALAPPDATA%\CodexUsageTray\diagnostics.log`에서 실제 App Server 오류를 확인합니다.
+
+진단 로그에는 App Server의 최근 stderr와 오류 종류만 기록합니다. 로그는 128KiB로
+제한되고 Bearer 토큰, `accessToken`, `refreshToken`, `apiKey` 형태의 값은 자동으로
+제거됩니다. 프롬프트, Codex 응답, Hook 입력, 환경 변수는 기록하지 않습니다.
 
 ### 승인·완료 팝업이 나타나지 않을 때
 
@@ -146,9 +151,11 @@ codex login
 4. 트레이 앱 우클릭 → **작업 알림 기록**을 확인합니다.
 
 Codex에 `Stop hook (failed): hook returned invalid stop hook JSON output`이 표시되면
-`v1.2.1` 이하의 완료 응답 형식 문제입니다. 최신 버전으로 다시 설치하고 Codex를
-완전히 재시작한 뒤 `/hooks`에서 변경된 Hook을 다시 신뢰하세요. 정상 상태에서는 짧은
-작업이 끝날 때 `Stop hook (completed)`가 표시되고 화면 상단에 완료 팝업이 나타납니다.
+`v1.2.3` 이하를 최신 버전으로 다시 설치하고 Codex를 완전히 재시작한 뒤 `/hooks`에서
+변경된 Hook을 다시 신뢰하세요. `v1.2.4`부터 알림 전용 Hook은 Codex 제어 출력을 전혀
+내보내지 않으며 래퍼도 보조 프로그램의 stdout/stderr를 차단합니다. 정상 상태에서는
+짧은 작업이 끝날 때 `Stop hook (completed)`가 표시되고 화면 상단에 완료 팝업이
+나타납니다.
 
 웹 ChatGPT만 감지되지 않으면 확장 관리 화면에서 확장이 켜져 있는지 확인하고
 `chatgpt.com` 탭을 새로고침하세요. 확장 오류에 `Native host has exited`가 보이면
