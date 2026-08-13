@@ -122,6 +122,9 @@ $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) "CodexUsageTray-Installe
 $packageDirectory = Join-Path $testRoot 'package'
 $installDirectory = Join-Path $testRoot 'installed'
 $lockingBridge = $null
+$protectedBridge = $null
+$rollbackBridge = $null
+$unexpectedTrayProcesses = @()
 
 try {
     New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
@@ -238,6 +241,11 @@ public static class ProcessLockHolder
         -Language CSharp `
         -OutputAssembly $lockHolderTemplate `
         -OutputType ConsoleApplication
+    $protectedDirectory = Join-Path $testRoot 'protected-other-install'
+    New-Item -ItemType Directory -Path $protectedDirectory -Force | Out-Null
+    $protectedBridgePath = Join-Path $protectedDirectory 'CodexUsageTray.EventBridge.exe'
+    Copy-Item -LiteralPath $lockHolderTemplate -Destination $protectedBridgePath
+    $protectedBridge = Start-Process -FilePath $protectedBridgePath -PassThru
     $installedBridge = Join-Path $installDirectory 'CodexUsageTray.EventBridge.exe'
     Remove-Item -LiteralPath $installedBridge -Force
     Copy-Item -LiteralPath $lockHolderTemplate -Destination $installedBridge
@@ -260,15 +268,64 @@ public static class ProcessLockHolder
         -SkipCodexHooks
 
     $lockingBridge.Refresh()
+    $protectedBridge.Refresh()
     Assert-True $lockingBridge.HasExited 'update stops the installed EventBridge process'
+    Assert-True (-not $protectedBridge.HasExited) 'update preserves same-name EventBridge outside the install path'
     Assert-Equal 'version-3' (
         [System.IO.File]::ReadAllText((Join-Path $installDirectory 'CodexUsageTray.exe'))
     ) 'update succeeds while the installed EventBridge is running'
+
+    $installedTray = Join-Path $installDirectory 'CodexUsageTray.exe'
+    Remove-Item -LiteralPath $installedTray -Force
+    Remove-Item -LiteralPath $installedBridge -Force
+    Copy-Item -LiteralPath $lockHolderTemplate -Destination $installedTray
+    Copy-Item -LiteralPath $lockHolderTemplate -Destination $installedBridge
+    $restoredTrayHash = (Get-FileHash -LiteralPath $installedTray -Algorithm SHA256).Hash
+    $rollbackBridge = Start-Process -FilePath $installedBridge -PassThru
+    Start-Sleep -Milliseconds 300
+    [System.IO.File]::WriteAllText(
+        (Join-Path $packageDirectory 'CodexUsageTray.exe'),
+        'failed-version',
+        [System.Text.Encoding]::ASCII)
+    [System.IO.File]::WriteAllText(
+        (Join-Path $packageDirectory 'CodexUsageTray.EventBridge.exe'),
+        'failed-bridge',
+        [System.Text.Encoding]::ASCII)
+    [System.IO.File]::WriteAllText(
+        (Join-Path $packageDirectory 'setup-integration.ps1'),
+        "throw 'forced integration failure'",
+        [System.Text.Encoding]::ASCII)
+
+    Assert-Throws {
+        & $installerPath `
+            -PackageDirectory $packageDirectory `
+            -InstallDirectory $installDirectory `
+            -DoNotLaunch
+    } 'failed integration rolls the update back'
+
+    Assert-Equal $restoredTrayHash (
+        (Get-FileHash -LiteralPath $installedTray -Algorithm SHA256).Hash
+    ) 'failed update restores the previous tray executable'
+    Start-Sleep -Milliseconds 300
+    $unexpectedTrayProcesses = @(Get-Process -Name 'CodexUsageTray' -ErrorAction SilentlyContinue | Where-Object {
+        try {
+            $_.Path -and [string]::Equals(
+                [System.IO.Path]::GetFullPath($_.Path),
+                $installedTray,
+                [System.StringComparison]::OrdinalIgnoreCase)
+        }
+        catch {
+            $false
+        }
+    })
+    Assert-Equal 0 $unexpectedTrayProcesses.Count 'EventBridge-only rollback does not start the tray'
 }
 finally {
-    if ($null -ne $lockingBridge -and -not $lockingBridge.HasExited) {
-        Stop-Process -Id $lockingBridge.Id -Force -ErrorAction SilentlyContinue
-        [void]$lockingBridge.WaitForExit(5000)
+    foreach ($testProcess in @($lockingBridge, $protectedBridge, $rollbackBridge) + @($unexpectedTrayProcesses)) {
+        if ($null -ne $testProcess -and -not $testProcess.HasExited) {
+            Stop-Process -Id $testProcess.Id -Force -ErrorAction SilentlyContinue
+            [void]$testProcess.WaitForExit(5000)
+        }
     }
     if (Test-Path -LiteralPath $testRoot) {
         Remove-Item -LiteralPath $testRoot -Recurse -Force
