@@ -2,6 +2,8 @@ name: Release Windows app
 
 on:
   push:
+    branches:
+      - "main"
     tags:
       - "v*"
   workflow_dispatch:
@@ -35,6 +37,9 @@ jobs:
         run: |
           if ($env:EVENT_NAME -eq "workflow_dispatch") {
               $releaseTag = $env:INPUT_VERSION
+          }
+          elseif ($env:REF_NAME -eq "main") {
+              $releaseTag = "v1.1.1"
           }
           else {
               $releaseTag = $env:REF_NAME
@@ -152,7 +157,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_REPOSITORY: ${{ github.repository }}
-          RELEASE_TARGET: ${{ github.sha }}
+          RELEASE_TARGET: de9e203f16aea658556b5b18f061256c3b7c188c
         run: |
           gh release create "$env:RELEASE_TAG" `
               .\artifacts\release\CodexUsageTray-win-x64.zip `
