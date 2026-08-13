@@ -2,6 +2,8 @@ name: Release Windows app
 
 on:
   push:
+    branches:
+      - "main"
     tags:
       - "v*"
   workflow_dispatch:
@@ -35,6 +37,9 @@ jobs:
         run: |
           if ($env:EVENT_NAME -eq "workflow_dispatch") {
               $releaseTag = $env:INPUT_VERSION
+          }
+          elseif ($env:REF_NAME -eq "main") {
+              $releaseTag = "v1.1.1"
           }
           else {
               $releaseTag = $env:REF_NAME
@@ -148,6 +153,7 @@ jobs:
           Remove-Item -LiteralPath $smokeDirectory -Recurse -Force
 
       - name: Create GitHub release
+        if: ${{ github.ref != 'refs/heads/main' }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
