@@ -34,8 +34,16 @@ function Invoke-HookWrapper {
         [Parameter(Mandatory = $true)][string]$WrapperPath
     )
 
-    $command = "`"$WrapperPath`""
-    return $Payload | cmd.exe /D /S /C "`"$command`""
+    $inputPath = [System.IO.Path]::GetTempFileName()
+    try {
+        $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($inputPath, $Payload, $utf8WithoutBom)
+        $command = "call `"$WrapperPath`" < `"$inputPath`""
+        return cmd.exe /D /S /C $command
+    }
+    finally {
+        Remove-Item -LiteralPath $inputPath -Force -ErrorAction SilentlyContinue
+    }
 }
 
 try {
