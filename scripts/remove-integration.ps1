@@ -4,7 +4,7 @@ param()
 $ErrorActionPreference = 'Stop'
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
 $hooksPath = Join-Path $codexHome 'hooks.json'
-$marker = 'CodexUsageTray.EventBridge.exe'
+$markers = @('CodexUsageTray.EventBridge.exe', 'invoke-codex-hook.cmd')
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $nativeHostName = 'com.alsdmlals4.codexusagetray'
 $installDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -22,7 +22,15 @@ function Remove-UsageTrayHandlers {
 
         $originalHandlers = @($hooksProperty.Value)
         $preservedHandlers = @($originalHandlers | Where-Object {
-            ($_ | ConvertTo-Json -Depth 20 -Compress) -notmatch [regex]::Escape($marker)
+            $serializedHandler = $_ | ConvertTo-Json -Depth 20 -Compress
+            $isUsageTrayHandler = $false
+            foreach ($usageTrayMarker in $markers) {
+                if ($serializedHandler -match [regex]::Escape($usageTrayMarker)) {
+                    $isUsageTrayHandler = $true
+                    break
+                }
+            }
+            -not $isUsageTrayHandler
         })
         if ($preservedHandlers.Count -eq $originalHandlers.Count) {
             $result += $group
@@ -84,6 +92,10 @@ finally {
 
     Remove-Item `
         -LiteralPath (Join-Path $installDirectory 'chatgpt-native-host.json') `
+        -Force `
+        -ErrorAction SilentlyContinue
+    Remove-Item `
+        -LiteralPath (Join-Path $installDirectory 'invoke-codex-hook.cmd') `
         -Force `
         -ErrorAction SilentlyContinue
 }

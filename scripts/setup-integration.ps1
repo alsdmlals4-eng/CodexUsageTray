@@ -8,12 +8,26 @@ $ErrorActionPreference = 'Stop'
 $resolvedBridge = (Resolve-Path -LiteralPath $BridgePath).Path
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
 $hooksPath = Join-Path $codexHome 'hooks.json'
-$marker = 'CodexUsageTray.EventBridge.exe'
-$command = "`"$resolvedBridge`" --hook"
+$markers = @('CodexUsageTray.EventBridge.exe', 'invoke-codex-hook.cmd')
 $nativeHostName = 'com.alsdmlals4.codexusagetray'
 $extensionOrigin = 'chrome-extension://mgeacoaocoijccehjlolcedfbhbaifhl/'
 $installDirectory = Split-Path -Parent $resolvedBridge
 $nativeManifestPath = Join-Path $installDirectory 'chatgpt-native-host.json'
+$hookWrapperPath = Join-Path $installDirectory 'invoke-codex-hook.cmd'
+$command = "`"$hookWrapperPath`""
+
+$wrapperTemporaryPath = "$hookWrapperPath.tmp-$PID"
+$wrapperText = @(
+    '@echo off',
+    '"%~dp0CodexUsageTray.EventBridge.exe" --hook',
+    'exit /b 0',
+    ''
+) -join "`r`n"
+[System.IO.File]::WriteAllText(
+    $wrapperTemporaryPath,
+    $wrapperText,
+    [System.Text.Encoding]::ASCII)
+Move-Item -LiteralPath $wrapperTemporaryPath -Destination $hookWrapperPath -Force
 
 New-Item -ItemType Directory -Path $codexHome -Force | Out-Null
 
@@ -51,7 +65,15 @@ function Remove-UsageTrayHandlers {
 
         $originalHandlers = @($hooksProperty.Value)
         $preservedHandlers = @($originalHandlers | Where-Object {
-            ($_ | ConvertTo-Json -Depth 20 -Compress) -notmatch [regex]::Escape($marker)
+            $serializedHandler = $_ | ConvertTo-Json -Depth 20 -Compress
+            $isUsageTrayHandler = $false
+            foreach ($usageTrayMarker in $markers) {
+                if ($serializedHandler -match [regex]::Escape($usageTrayMarker)) {
+                    $isUsageTrayHandler = $true
+                    break
+                }
+            }
+            -not $isUsageTrayHandler
         })
         if ($preservedHandlers.Count -eq $originalHandlers.Count) {
             $result += $group
@@ -81,7 +103,7 @@ function Set-UsageTrayHook {
         type = 'command'
         command = $command
         commandWindows = $command
-        timeout = 3
+        timeout = 15
         statusMessage = 'Sending Codex activity notification'
     }
     $group = [ordered]@{ hooks = @($handler) }
