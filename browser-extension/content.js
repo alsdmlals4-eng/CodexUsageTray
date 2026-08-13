@@ -18,7 +18,9 @@ function getConversationUrl() {
   const url = new URL(location.href);
   const segments = url.pathname.split("/").filter(Boolean);
   const conversationMarker = segments.findIndex((segment) => segment === "c");
-  if (conversationMarker < 0 || !segments[conversationMarker + 1]) {
+  const isConversation = conversationMarker >= 0 && segments[conversationMarker + 1];
+  const isCodexTask = segments.length >= 2 && segments[0] === "codex";
+  if (!isConversation && !isCodexTask) {
     return null;
   }
 

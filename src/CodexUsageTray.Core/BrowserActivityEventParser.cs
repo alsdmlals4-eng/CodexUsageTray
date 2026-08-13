@@ -14,7 +14,7 @@ public static class BrowserActivityEventParser
         var statusName = RequiredString(root, "status");
         var activityId = RequiredString(root, "activityId");
         var sourceUri = ParseChatGptConversationUri(RequiredString(root, "url"));
-        var conversationId = GetConversationId(sourceUri);
+        var conversationId = GetSourceId(sourceUri);
         var title = Limit(OptionalString(root, "title") ?? string.Empty, TitleLimit);
         var status = statusName switch
         {
@@ -50,7 +50,7 @@ public static class BrowserActivityEventParser
             throw new InvalidDataException("ChatGPT 대화 URL이 올바르지 않습니다.");
         }
 
-        _ = GetConversationId(uri);
+        _ = GetSourceId(uri);
         var safe = new UriBuilder(uri)
         {
             Query = string.Empty,
@@ -59,7 +59,7 @@ public static class BrowserActivityEventParser
         return safe.Uri;
     }
 
-    private static string GetConversationId(Uri uri)
+    private static string GetSourceId(Uri uri)
     {
         var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
         for (var index = 0; index < segments.Length - 1; index++)
@@ -71,7 +71,14 @@ public static class BrowserActivityEventParser
             }
         }
 
-        throw new InvalidDataException("ChatGPT 대화 식별자가 URL에 없습니다.");
+        if (segments.Length >= 2 &&
+            string.Equals(segments[0], "codex", StringComparison.Ordinal) &&
+            !string.IsNullOrWhiteSpace(segments[^1]))
+        {
+            return Uri.UnescapeDataString(segments[^1]);
+        }
+
+        throw new InvalidDataException("ChatGPT 대화 또는 Codex 작업 식별자가 URL에 없습니다.");
     }
 
     private static string RequiredString(JsonElement root, string propertyName) =>

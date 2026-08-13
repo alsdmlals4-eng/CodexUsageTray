@@ -394,6 +394,11 @@ internal static class Program
         Equal("Windows 알림 앱 만들기", activity.ChatLabel, "safe tab title label");
         Equal("ChatGPT 응답 생성이 끝났습니다.", activity.Summary,
             "extension-provided body-like text must be ignored");
+
+        var codexActivity = BrowserActivityEventParser.Parse(
+            "{\"status\":\"completed\",\"activityId\":\"job-1\",\"url\":\"https://chatgpt.com/codex/tasks/task-42\",\"title\":\"Codex 작업\"}",
+            ObservedAt);
+        Equal("web:task-42", codexActivity.SessionId, "ChatGPT Codex task routes are supported");
         return Task.CompletedTask;
     }
 
