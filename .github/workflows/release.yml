@@ -1,0 +1,163 @@
+name: Release Windows app
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag (for example, v1.1.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Resolve release version
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if ($env:EVENT_NAME -eq "workflow_dispatch") {
+              $releaseTag = $env:INPUT_VERSION
+          }
+          else {
+              $releaseTag = $env:REF_NAME
+          }
+
+          if ($releaseTag -notmatch '^v\d+\.\d+\.\d+$') {
+              throw "Release tag must use vMAJOR.MINOR.PATCH: $releaseTag"
+          }
+
+          "RELEASE_TAG=$releaseTag" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 `
+              -Append
+
+      - name: Test Windows PowerShell compatibility and installers
+        shell: pwsh
+        run: |
+          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+              -File .\tests\PowerShellInstaller.Tests.ps1
+          if ($LASTEXITCODE -ne 0) {
+              throw "PowerShell installer tests failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Test core logic
+        shell: pwsh
+        run: |
+          dotnet run --configuration Release `
+              --project .\tests\CodexUsageTray.Core.Tests\CodexUsageTray.Core.Tests.csproj
+          if ($LASTEXITCODE -ne 0) {
+              throw "Core tests failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Publish Windows executables
+        shell: pwsh
+        run: |
+          dotnet publish .\src\CodexUsageTray\CodexUsageTray.csproj `
+              --configuration Release `
+              --runtime win-x64 `
+              --self-contained true `
+              -p:PublishSingleFile=true `
+              -p:PublishTrimmed=false `
+              --output .\artifacts\publish\tray
+          if ($LASTEXITCODE -ne 0) {
+              throw "Tray app publish failed with exit code $LASTEXITCODE."
+          }
+
+          dotnet publish .\src\CodexUsageTray.EventBridge\CodexUsageTray.EventBridge.csproj `
+              --configuration Release `
+              --runtime win-x64 `
+              --self-contained true `
+              -p:PublishSingleFile=true `
+              -p:PublishTrimmed=false `
+              --output .\artifacts\publish\bridge
+          if ($LASTEXITCODE -ne 0) {
+              throw "Event bridge publish failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Package and smoke-test release
+        shell: pwsh
+        run: |
+          $releaseDirectory = Join-Path $PWD 'artifacts\release'
+          $packageDirectory = Join-Path $releaseDirectory 'package'
+          $smokeDirectory = Join-Path $env:RUNNER_TEMP 'CodexUsageTray-smoke'
+          New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
+
+          Copy-Item `
+              -LiteralPath .\artifacts\publish\tray\CodexUsageTray.exe `
+              -Destination $packageDirectory
+          Copy-Item `
+              -LiteralPath .\artifacts\publish\bridge\CodexUsageTray.EventBridge.exe `
+              -Destination $packageDirectory
+          foreach ($scriptPath in @(
+                  '.\scripts\install-release.ps1',
+                  '.\scripts\setup-integration.ps1',
+                  '.\scripts\remove-integration.ps1')) {
+              Copy-Item -LiteralPath $scriptPath -Destination $packageDirectory
+          }
+
+          & .\scripts\install-release.ps1 `
+              -PackageDirectory $packageDirectory `
+              -InstallDirectory $smokeDirectory `
+              -DoNotLaunch `
+              -SkipCodexHooks
+
+          foreach ($requiredFile in @(
+                  'CodexUsageTray.exe',
+                  'CodexUsageTray.EventBridge.exe',
+                  'install-release.ps1',
+                  'setup-integration.ps1',
+                  'remove-integration.ps1')) {
+              $installedFile = Join-Path $smokeDirectory $requiredFile
+              if (-not (Test-Path -LiteralPath $installedFile -PathType Leaf)) {
+                  throw "Smoke install did not produce $requiredFile."
+              }
+          }
+
+          $archivePath = Join-Path $releaseDirectory 'CodexUsageTray-win-x64.zip'
+          Compress-Archive `
+              -Path (Join-Path $packageDirectory '*') `
+              -DestinationPath $archivePath `
+              -CompressionLevel Optimal `
+              -Force
+
+          $sha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $checksumPath = "$archivePath.sha256"
+          [System.IO.File]::WriteAllText(
+              $checksumPath,
+              "$sha256  CodexUsageTray-win-x64.zip`n",
+              [System.Text.Encoding]::ASCII)
+
+          Remove-Item -LiteralPath $smokeDirectory -Recurse -Force
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_TARGET: ${{ github.sha }}
+        run: |
+          gh release create "$env:RELEASE_TAG" `
+              .\artifacts\release\CodexUsageTray-win-x64.zip `
+              .\artifacts\release\CodexUsageTray-win-x64.zip.sha256 `
+              --repo "$env:RELEASE_REPOSITORY" `
+              --target "$env:RELEASE_TARGET" `
+              --title "Codex Usage Tray $env:RELEASE_TAG" `
+              --generate-notes
