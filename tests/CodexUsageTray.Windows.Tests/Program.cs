@@ -9,7 +9,8 @@ internal static class Program
     [STAThread]
     private static int Main()
     {
-        ApplicationConfiguration.Initialize();
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
         try
         {
             UserClosingFlyoutHidesWithoutDisposing();
@@ -37,6 +38,13 @@ internal static class Program
 
         var popup = Application.OpenForms.OfType<ActivityPopupForm>().Single();
         Assert(popup.Visible, "the first completion popup must remain visible before a click");
+        var workingArea = Screen.FromControl(popup).WorkingArea;
+        Assert(popup.Top <= workingArea.Top + 40,
+            "the popup must be prominent at the top of the active screen");
+        Assert(Math.Abs((popup.Left + (popup.Width / 2)) -
+                        (workingArea.Left + (workingArea.Width / 2))) <= 2,
+            "the popup must be horizontally centered on the active screen");
+        Assert(popup.TopMost, "the popup must remain above other application windows");
         Assert(opened.Count == 0, "showing a popup must not activate a terminal automatically");
 
         FindClickSurface(popup).PerformClick();

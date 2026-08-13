@@ -16,6 +16,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly UsageFlyoutForm _flyout = new();
     private readonly ActivityHistoryForm _activityForm = new();
     private readonly ActivityStore _activityStore = new();
+    private readonly ActivityPopupQueue _popupQueue;
     private readonly ActivityPipeServer _activityPipe;
     private readonly Control _dispatcher = new();
     private readonly System.Windows.Forms.Timer _refreshTimer;
@@ -23,8 +24,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _startupItem;
     private readonly ToolStripMenuItem _activityItem;
     private UsageSnapshot? _lastSnapshot;
-    private ActivityEvent? _lastBalloonActivity;
-    private DateTimeOffset? _lastBalloonShownAt;
     private DateTimeOffset? _lastSuccessfulRefresh;
     private string? _lastError;
     private Task _activeRefreshTask = Task.CompletedTask;
@@ -35,6 +34,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     public TrayApplicationContext()
     {
         _dispatcher.CreateControl();
+        _popupQueue = new ActivityPopupQueue(OpenActivity);
         _activityPipe = new ActivityPipeServer();
         _activityPipe.ActivityReceived += OnActivityReceived;
         _activityPipe.Start();
@@ -72,17 +72,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 _flyout.ToggleNearCursor();
             }
         };
-        _notifyIcon.BalloonTipClicked += (_, _) =>
-        {
-            if (_lastBalloonActivity is null ||
-                !WindowActivator.TryActivate(
-                    _lastBalloonActivity.SourceWindowHandle,
-                    _lastBalloonActivity.SourceProcessId))
-            {
-                ShowActivityHistory();
-            }
-        };
-
         _refreshTimer = new System.Windows.Forms.Timer
         {
             Interval = checked((int)RefreshInterval.TotalMilliseconds)
@@ -174,22 +163,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
         UpdateActivities();
         if (activity.Status is ActivityStatus.ApprovalRequired or ActivityStatus.Completed)
         {
-            var shownAt = DateTimeOffset.Now;
-            var overlapsPreviousBalloon = _lastBalloonShownAt is not null &&
-                shownAt - _lastBalloonShownAt.Value < TimeSpan.FromSeconds(8);
-            _lastBalloonActivity = overlapsPreviousBalloon ? null : activity;
-            _lastBalloonShownAt = shownAt;
-            var status = activity.Status == ActivityStatus.ApprovalRequired ? "승인 필요" : "작업 완료";
-            var terminal = string.IsNullOrWhiteSpace(activity.TerminalTitle)
-                ? string.Empty
-                : $"{activity.TerminalTitle}\n";
-            _notifyIcon.ShowBalloonTip(
-                timeout: 8000,
-                tipTitle: $"{status} · {activity.ProjectName} · {activity.ChatLabel}",
-                tipText: TruncateBalloonText(terminal + activity.Summary),
-                tipIcon: activity.Status == ActivityStatus.ApprovalRequired
-                    ? ToolTipIcon.Warning
-                    : ToolTipIcon.Info);
+            _popupQueue.Enqueue(activity);
+        }
+    }
+
+    private void OpenActivity(ActivityEvent activity)
+    {
+        if (!WindowActivator.TryActivate(activity.SourceWindowHandle, activity.SourceProcessId))
+        {
+            ShowActivityHistory();
         }
     }
 
@@ -387,8 +369,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private static string TruncateTooltip(string text) => text.Length <= 63 ? text : text[..63];
 
-    private static string TruncateBalloonText(string text) => text.Length <= 240 ? text : text[..239] + "…";
-
     protected override void ExitThreadCore()
     {
         if (!_shutdownComplete)
@@ -401,6 +381,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _activityPipe.ActivityReceived -= OnActivityReceived;
         _initialTimer.Dispose();
         _refreshTimer.Dispose();
+        _popupQueue.Dispose();
         _flyout.Dispose();
         _activityForm.Dispose();
         _dispatcher.Dispose();
