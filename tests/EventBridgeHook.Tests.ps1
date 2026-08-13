@@ -31,7 +31,9 @@ function Assert-Equal {
 try {
     New-Item -ItemType Directory -Path $installDirectory -Force | Out-Null
     New-Item -ItemType Directory -Path $codexHome -Force | Out-Null
-    Copy-Item -LiteralPath (Resolve-Path -LiteralPath $BridgePath).Path -Destination $installedBridge
+    $resolvedBridge = (Resolve-Path -LiteralPath $BridgePath).Path
+    $bridgeOutputDirectory = Split-Path -Parent $resolvedBridge
+    Copy-Item -Path (Join-Path $bridgeOutputDirectory '*') -Destination $installDirectory -Recurse -Force
     $env:CODEX_HOME = $codexHome
     & $setupPath -BridgePath $installedBridge
 
