@@ -16,6 +16,8 @@ public static class BrowserActivityEventParser
         var sourceUri = ParseChatGptConversationUri(RequiredString(root, "url"));
         var conversationId = GetSourceId(sourceUri);
         var title = Limit(OptionalString(root, "title") ?? string.Empty, TitleLimit);
+        var tabId = OptionalPositiveInt32(root, "tabId");
+        var windowId = OptionalPositiveInt32(root, "windowId");
         var status = statusName switch
         {
             "completed" => ActivityStatus.Completed,
@@ -36,7 +38,9 @@ public static class BrowserActivityEventParser
             string.Empty,
             occurredAt,
             SourceKind: ActivitySourceKind.ChatGptWeb,
-            SourceUri: sourceUri.AbsoluteUri);
+            SourceUri: sourceUri.AbsoluteUri,
+            BrowserTabId: tabId,
+            BrowserWindowId: windowId);
     }
 
     private static Uri ParseChatGptConversationUri(string value)
@@ -90,6 +94,23 @@ public static class BrowserActivityEventParser
         root.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
             ? property.GetString()?.Trim()
             : null;
+
+    private static int OptionalPositiveInt32(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var property))
+        {
+            return 0;
+        }
+
+        if (property.ValueKind != JsonValueKind.Number ||
+            !property.TryGetInt32(out var value) ||
+            value <= 0)
+        {
+            throw new InvalidDataException($"ChatGPT 웹 이벤트 숫자 필드가 올바르지 않습니다: {propertyName}");
+        }
+
+        return value;
+    }
 
     private static string Shorten(string value, int length) =>
         value.Length <= length ? value : value[..length];

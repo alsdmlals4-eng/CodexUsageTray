@@ -15,7 +15,8 @@ internal static class Program
         {
             UserClosingFlyoutHidesWithoutDisposing();
             PopupQueuePersistsUntilClickAndOpensEveryActivity();
-            Console.WriteLine("2 Windows UI regression tests passed");
+            BrowserActivatorSendsExactSourceIdentity();
+            Console.WriteLine("3 Windows UI regression tests passed");
             return 0;
         }
         catch (Exception exception)
@@ -60,6 +61,42 @@ internal static class Program
         Assert(opened.SequenceEqual(new[] { first.ActivityKey, second.ActivityKey }),
             "each queued popup must open its matching source activity in order");
         Assert(!popup.Visible, "the clicked popup must disappear when no alerts remain");
+    }
+
+    private static void BrowserActivatorSendsExactSourceIdentity()
+    {
+        string? observedPipe = null;
+        string? observedPayload = null;
+        var activator = new BrowserActivityActivator((pipeName, payload) =>
+        {
+            observedPipe = pipeName;
+            observedPayload = payload;
+            return true;
+        });
+        var activity = new ActivityEvent(
+            "web:thread-17",
+            "complete-1",
+            string.Empty,
+            "ChatGPT Web",
+            "기존 탭",
+            ActivityStatus.Completed,
+            "완료",
+            string.Empty,
+            DateTimeOffset.Now,
+            SourceKind: ActivitySourceKind.ChatGptWeb,
+            SourceUri: "https://chatgpt.com/c/thread-17",
+            BrowserConnectionId: "90d5919d-6e93-4f12-8187-51ff6cc7af4b",
+            BrowserTabId: 117,
+            BrowserWindowId: 9);
+
+        Assert(activator.TryActivate(activity), "browser command delivery must succeed");
+        Assert(
+            observedPipe == "CodexUsageTray.BrowserCommands.v1.90d5919d6e934f12818751ff6cc7af4b",
+            "the source native connection pipe must be targeted");
+        Assert(BrowserActivationCommand.TryParse(observedPayload ?? string.Empty, out var command),
+            "the emitted activation payload must be valid");
+        Assert(command?.TabId == 117 && command.WindowId == 9,
+            "the exact source browser tab and window identity must be preserved");
     }
 
     private static ActivityEvent CreateActivity(

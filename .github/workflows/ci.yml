@@ -30,7 +30,11 @@ jobs:
             throw 'Browser extension permissions or host scope are invalid.'
           }
           node --check .\browser-extension\background.js
+          node --check .\browser-extension\completion-state.js
           node --check .\browser-extension\content.js
+          node --check .\browser-extension\tab-focus.js
+          node .\tests\browser-extension\completion-state.test.js
+          node .\tests\browser-extension\tab-focus.test.js
 
       - name: Test Windows PowerShell compatibility and installers
         shell: pwsh

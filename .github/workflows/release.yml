@@ -41,7 +41,11 @@ jobs:
             throw 'Browser extension permissions or host scope are invalid.'
           }
           node --check .\browser-extension\background.js
+          node --check .\browser-extension\completion-state.js
           node --check .\browser-extension\content.js
+          node --check .\browser-extension\tab-focus.js
+          node .\tests\browser-extension\completion-state.test.js
+          node .\tests\browser-extension\tab-focus.test.js
 
       - name: Resolve release version
         shell: pwsh
@@ -162,7 +166,9 @@ jobs:
                   'remove-integration.ps1',
                   'browser-extension\manifest.json',
                   'browser-extension\background.js',
-                  'browser-extension\content.js')) {
+                  'browser-extension\completion-state.js',
+                  'browser-extension\content.js',
+                  'browser-extension\tab-focus.js')) {
               $installedFile = Join-Path $smokeDirectory $requiredFile
               if (-not (Test-Path -LiteralPath $installedFile -PathType Leaf)) {
                   throw "Smoke install did not produce $requiredFile."

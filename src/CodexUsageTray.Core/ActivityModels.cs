@@ -27,7 +27,10 @@ public sealed record ActivityEvent(
     long SourceWindowHandle = 0,
     string? TerminalTitle = null,
     ActivitySourceKind SourceKind = ActivitySourceKind.CodexTerminal,
-    string? SourceUri = null)
+    string? SourceUri = null,
+    string? BrowserConnectionId = null,
+    int BrowserTabId = 0,
+    int BrowserWindowId = 0)
 {
     public string ActivityKey => $"{SessionId}\u001f{TurnId ?? string.Empty}";
 
@@ -38,6 +41,16 @@ public sealed record ActivityEvent(
             SourceWindowHandle = windowHandle,
             TerminalTitle = string.IsNullOrWhiteSpace(title) ? null : title.Trim()
         };
+
+    public ActivityEvent WithBrowserConnection(string connectionId)
+    {
+        if (!Guid.TryParse(connectionId, out var parsed))
+        {
+            throw new ArgumentException("Browser connection ID must be a GUID.", nameof(connectionId));
+        }
+
+        return this with { BrowserConnectionId = parsed.ToString("D") };
+    }
 }
 
 public sealed class ActivityStore
@@ -82,4 +95,14 @@ public sealed class ActivityStore
 public static class ActivityPipeNames
 {
     public const string PipeName = "CodexUsageTray.Activity.v1";
+
+    public static string GetBrowserCommandPipeName(string connectionId)
+    {
+        if (!Guid.TryParse(connectionId, out var parsed))
+        {
+            throw new ArgumentException("Browser connection ID must be a GUID.", nameof(connectionId));
+        }
+
+        return $"CodexUsageTray.BrowserCommands.v1.{parsed:N}";
+    }
 }

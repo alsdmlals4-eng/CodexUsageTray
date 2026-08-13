@@ -6,10 +6,17 @@ namespace CodexUsageTray;
 
 internal static class ActivitySourceLauncher
 {
+    private static readonly BrowserActivityActivator BrowserActivator = new();
+
     public static bool TryOpen(ActivityEvent activity)
     {
         if (activity.SourceKind == ActivitySourceKind.ChatGptWeb)
         {
+            if (BrowserActivator.TryActivate(activity))
+            {
+                return true;
+            }
+
             return TryOpenWebConversation(activity.SourceUri);
         }
 

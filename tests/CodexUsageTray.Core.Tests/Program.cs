@@ -34,7 +34,10 @@ internal static class Program
             ("activity event survives IPC JSON round trip", TestActivitySerialization),
             ("web completion keeps only safe navigation metadata", TestWebCompletionActivity),
             ("web approval becomes a persistent approval activity", TestWebApprovalActivity),
-            ("web activity rejects non-ChatGPT navigation URLs", TestWebActivityRejectsUnsafeUrl)
+            ("web activity rejects non-ChatGPT navigation URLs", TestWebActivityRejectsUnsafeUrl),
+            ("web activity preserves trusted source tab identity", TestWebSourceIdentity),
+            ("browser connection IDs are validated before pipe use", TestBrowserConnectionIdentity),
+            ("browser activation command contains exact source identity", TestBrowserActivationCommand)
         };
 
         var failures = 0;
@@ -430,6 +433,75 @@ internal static class Program
         Throws<InvalidDataException>(() => BrowserActivityEventParser.Parse(
             "{\"status\":\"completed\",\"activityId\":\"x\",\"url\":\"javascript:alert(1)\"}",
             ObservedAt));
+        return Task.CompletedTask;
+    }
+
+    private static Task TestWebSourceIdentity()
+    {
+        const string json = """
+        {
+          "status": "completed",
+          "activityId": "complete-22",
+          "url": "https://chatgpt.com/c/thread-22",
+          "title": "기존 탭 복귀",
+          "tabId": 117,
+          "windowId": 9
+        }
+        """;
+
+        var activity = BrowserActivityEventParser.Parse(json, ObservedAt);
+
+        Equal(117, activity.BrowserTabId, "source tab id");
+        Equal(9, activity.BrowserWindowId, "source window id");
+        Throws<InvalidDataException>(() => BrowserActivityEventParser.Parse(
+            json.Replace("\"tabId\": 117", "\"tabId\": 0", StringComparison.Ordinal),
+            ObservedAt));
+        return Task.CompletedTask;
+    }
+
+    private static Task TestBrowserConnectionIdentity()
+    {
+        const string connectionId = "90d5919d-6e93-4f12-8187-51ff6cc7af4b";
+        var activity = BrowserActivityEventParser.Parse(
+            "{\"status\":\"completed\",\"activityId\":\"x\",\"url\":\"https://chatgpt.com/c/thread-x\",\"tabId\":17,\"windowId\":3}",
+            ObservedAt);
+
+        var connected = activity.WithBrowserConnection(connectionId);
+
+        Equal(connectionId, connected.BrowserConnectionId ?? string.Empty, "browser connection id");
+        Equal(
+            "CodexUsageTray.BrowserCommands.v1.90d5919d6e934f12818751ff6cc7af4b",
+            ActivityPipeNames.GetBrowserCommandPipeName(connectionId),
+            "connection-specific pipe name");
+        Throws<ArgumentException>(() => activity.WithBrowserConnection("not-a-guid"));
+        Throws<ArgumentException>(() => ActivityPipeNames.GetBrowserCommandPipeName("../unsafe"));
+        return Task.CompletedTask;
+    }
+
+    private static Task TestBrowserActivationCommand()
+    {
+        const string connectionId = "90d5919d-6e93-4f12-8187-51ff6cc7af4b";
+        var activity = BrowserActivityEventParser.Parse(
+            "{\"status\":\"completed\",\"activityId\":\"x\",\"url\":\"https://chatgpt.com/c/thread-x\",\"tabId\":17,\"windowId\":3}",
+            ObservedAt).WithBrowserConnection(connectionId);
+
+        var command = BrowserActivationCommand.FromActivity(activity);
+
+        Equal("activate", command.Action, "activation action");
+        Equal("https://chatgpt.com/c/thread-x", command.Url, "safe target URL");
+        Equal(17, command.TabId, "preferred tab id");
+        Equal(3, command.WindowId, "source window id");
+        var restored = JsonSerializer.Deserialize<BrowserActivationCommand>(
+            JsonSerializer.Serialize(command)) ??
+            throw new InvalidOperationException("browser command did not deserialize");
+        Equal(command, restored, "browser command IPC round trip");
+        True(BrowserActivationCommand.TryParse(JsonSerializer.Serialize(command), out var parsed),
+            "valid activation command is accepted");
+        Equal(command, parsed, "validated activation command");
+        True(!BrowserActivationCommand.TryParse(
+                "{\"action\":\"activate\",\"url\":\"https://example.com/c/stolen\",\"tabId\":17,\"windowId\":3}",
+                out _),
+            "unsafe activation command is rejected");
         return Task.CompletedTask;
     }
 

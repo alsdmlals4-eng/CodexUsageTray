@@ -4,6 +4,7 @@ param()
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $installerPath = Join-Path $repositoryRoot 'scripts/install-release.ps1'
+$integrationSetupPath = Join-Path $repositoryRoot 'scripts/setup-integration.ps1'
 $onlineInstallerPath = Join-Path $repositoryRoot 'install-online.ps1'
 $releaseWorkflowPath = Join-Path $repositoryRoot '.github/workflows/release.yml'
 $testCount = 0
@@ -222,6 +223,89 @@ try {
 finally {
     if (Test-Path -LiteralPath $testRoot) {
         Remove-Item -LiteralPath $testRoot -Recurse -Force
+    }
+}
+
+if ($env:OS -eq 'Windows_NT') {
+    $integrationRoot = Join-Path ([System.IO.Path]::GetTempPath()) "CodexUsageTray-HookTests-$([guid]::NewGuid().ToString('N'))"
+    $integrationInstallDirectory = Join-Path $integrationRoot 'installed'
+    $integrationCodexHome = Join-Path $integrationRoot 'codex-home'
+    $integrationBridgePath = Join-Path $integrationInstallDirectory 'CodexUsageTray.EventBridge.exe'
+    $previousCodexHome = $env:CODEX_HOME
+    $nativeHostName = 'com.alsdmlals4.codexusagetray'
+
+    try {
+        New-Item -ItemType Directory -Path $integrationInstallDirectory -Force | Out-Null
+        New-Item -ItemType Directory -Path $integrationCodexHome -Force | Out-Null
+        [System.IO.File]::WriteAllText(
+            $integrationBridgePath,
+            'bridge-fixture',
+            [System.Text.Encoding]::ASCII)
+
+        $existingHooks = [ordered]@{
+            hooks = [ordered]@{
+                Stop = @(
+                    [ordered]@{
+                        hooks = @(
+                            [ordered]@{
+                                type = 'command'
+                                commandWindows = 'user-stop-handler.exe'
+                                timeout = 9
+                            }
+                        )
+                    },
+                    [ordered]@{
+                        hooks = @(
+                            [ordered]@{
+                                type = 'command'
+                                commandWindows = '"C:\old\CodexUsageTray.EventBridge.exe" --hook'
+                                timeout = 3
+                            }
+                        )
+                    }
+                )
+            }
+        } | ConvertTo-Json -Depth 20
+        [System.IO.File]::WriteAllText(
+            (Join-Path $integrationCodexHome 'hooks.json'),
+            $existingHooks,
+            (New-Object System.Text.UTF8Encoding($false)))
+
+        $env:CODEX_HOME = $integrationCodexHome
+        & $integrationSetupPath -BridgePath $integrationBridgePath
+
+        $installedHooks = Get-Content -LiteralPath (Join-Path $integrationCodexHome 'hooks.json') -Raw | ConvertFrom-Json
+        foreach ($eventName in @('UserPromptSubmit', 'PermissionRequest', 'Stop')) {
+            $usageTrayHandlers = @($installedHooks.hooks.$eventName | ForEach-Object { $_.hooks } | Where-Object {
+                $_.commandWindows -match 'invoke-codex-hook\.cmd'
+            })
+            Assert-Equal 1 $usageTrayHandlers.Count "$eventName installs exactly one resilient hook wrapper"
+            Assert-Equal 15 $usageTrayHandlers[0].timeout "$eventName allows bridge cold start time"
+        }
+
+        $preservedUserHandlers = @($installedHooks.hooks.Stop | ForEach-Object { $_.hooks } | Where-Object {
+            $_.commandWindows -eq 'user-stop-handler.exe'
+        })
+        Assert-Equal 1 $preservedUserHandlers.Count 'setup preserves unrelated user Stop hooks'
+
+        $wrapperPath = Join-Path $integrationInstallDirectory 'invoke-codex-hook.cmd'
+        Assert-True (Test-Path -LiteralPath $wrapperPath -PathType Leaf) 'setup creates the Codex hook wrapper'
+        $wrapperBytes = [System.IO.File]::ReadAllBytes($wrapperPath)
+        Assert-Equal 0 @($wrapperBytes | Where-Object { $_ -gt 0x7F }).Count 'Codex hook wrapper is ASCII'
+        $wrapperText = [System.IO.File]::ReadAllText($wrapperPath)
+        Assert-True $wrapperText.Contains('%~dp0CodexUsageTray.EventBridge.exe') 'hook wrapper launches its installed event bridge'
+        Assert-True $wrapperText.Contains('exit /b 0') 'hook wrapper never reports notification delivery as a Codex failure'
+    }
+    finally {
+        $env:CODEX_HOME = $previousCodexHome
+        foreach ($nativeHostKey in @(
+                "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$nativeHostName",
+                "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\$nativeHostName")) {
+            Remove-Item -LiteralPath $nativeHostKey -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $integrationRoot) {
+            Remove-Item -LiteralPath $integrationRoot -Recurse -Force
+        }
     }
 }
 
