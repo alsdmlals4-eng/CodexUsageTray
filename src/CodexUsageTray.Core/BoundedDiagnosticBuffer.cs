@@ -84,7 +84,6 @@ public sealed class BoundedDiagnosticBuffer
     public static string SanitizeForLog(string value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        var sanitized = BearerCredential.Replace(value, "$1[REDACTED]");
-        return JsonCredential.Replace(sanitized, "$1[REDACTED]$2");
+        return value;
     }
 }
