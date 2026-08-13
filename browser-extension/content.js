@@ -10,8 +10,7 @@ const STOP_SELECTORS = [
 const APPROVE_WORDS = ["approve", "allow", "confirm", "승인", "허용", "확인"];
 const REJECT_WORDS = ["deny", "reject", "cancel", "거부", "취소"];
 const seenApprovalContainers = new WeakSet();
-let wasGenerating = isGenerating();
-let lastUrl = location.href;
+const completionState = new CodexUsageTrayCompletionState.CompletionState(2000);
 let completionSequence = 0;
 
 function getConversationUrl() {
@@ -90,35 +89,50 @@ function sendActivity(status, activityId) {
   });
 }
 
-function inspectPage() {
-  if (location.href !== lastUrl) {
-    lastUrl = location.href;
-    wasGenerating = isGenerating();
-  }
-
-  const generating = isGenerating();
-  if (wasGenerating && !generating) {
+function inspectPage(assistantMutated = false) {
+  const result = completionState.observe({
+    now: Date.now(),
+    generating: isGenerating(),
+    assistantMutated,
+    routeKey: getConversationUrl() || location.pathname
+  });
+  if (result.completed) {
     completionSequence += 1;
     sendActivity("completed", `complete-${Date.now()}-${completionSequence}`);
   }
-  wasGenerating = generating;
 
   if (findNewApprovalContainer()) {
     sendActivity("approval_required", `approval-${Date.now()}`);
   }
 }
 
+function belongsToAssistantResponse(node) {
+  const element = node instanceof Element ? node : node.parentElement;
+  return Boolean(element?.closest("[data-message-author-role='assistant']"));
+}
+
+function mutationsTouchAssistantResponse(mutations) {
+  return mutations.some((mutation) =>
+    belongsToAssistantResponse(mutation.target) ||
+    Array.from(mutation.addedNodes).some(belongsToAssistantResponse));
+}
+
 let inspectionScheduled = false;
-const observer = new MutationObserver(() => {
+let pendingAssistantMutation = false;
+const observer = new MutationObserver((mutations) => {
+  pendingAssistantMutation = pendingAssistantMutation ||
+    mutationsTouchAssistantResponse(mutations);
   if (inspectionScheduled) {
     return;
   }
 
   inspectionScheduled = true;
-  requestAnimationFrame(() => {
+  setTimeout(() => {
     inspectionScheduled = false;
-    inspectPage();
-  });
+    const assistantMutated = pendingAssistantMutation;
+    pendingAssistantMutation = false;
+    inspectPage(assistantMutated);
+  }, 50);
 });
 
 observer.observe(document.documentElement, {
@@ -127,5 +141,5 @@ observer.observe(document.documentElement, {
   attributes: true,
   attributeFilter: ["aria-label", "data-testid", "disabled"]
 });
-setInterval(inspectPage, 2000);
-inspectPage();
+setInterval(() => inspectPage(false), 500);
+inspectPage(false);
