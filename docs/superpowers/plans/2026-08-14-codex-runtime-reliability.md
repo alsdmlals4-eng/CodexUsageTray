@@ -1,5 +1,9 @@
 # Codex Runtime Reliability Implementation Plan
 
+> **Superseded Stop-output decision:** Codex 0.147.0 requires valid JSON on stdout for a
+> successful `Stop` Hook. The zero-stdout decision below caused the v1.2.4-v1.2.6
+> regression and is replaced by `2026-08-14-stop-hook-json-success.md` and v1.2.7.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the notification-only Codex hooks complete without producing parser-sensitive stdout, and preserve actionable diagnostics when the usage App Server cannot refresh.
