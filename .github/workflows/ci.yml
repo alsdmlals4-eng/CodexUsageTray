@@ -31,6 +31,7 @@ jobs:
           }
           node --check .\browser-extension\background.js
           node --check .\browser-extension\completion-state.js
+          node --check .\browser-extension\recovery-watchdog.js
           node --check .\browser-extension\runtime-messaging.js
           node --check .\browser-extension\content.js
           node --check .\browser-extension\tab-focus.js
