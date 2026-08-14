@@ -236,6 +236,28 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void OpenActivity(ActivityEvent activity)
     {
+        if (string.Equals(
+                activity.Detail,
+                RecoverySelfTestDetail,
+                StringComparison.Ordinal))
+        {
+            if (activity.Status == ActivityStatus.RecoveryRequired)
+            {
+                HandleActivity(activity with
+                {
+                    Status = ActivityStatus.Recovered,
+                    Summary = "[테스트] 자동 복구 · 최대 3회/중복 억제/reset 검증 완료",
+                    OccurredAt = DateTimeOffset.Now
+                });
+            }
+            else if (activity.Status == ActivityStatus.Recovered)
+            {
+                _recoverySelfTestRunning = false;
+            }
+
+            return;
+        }
+
         if (!ActivitySourceLauncher.TryOpen(activity))
         {
             ShowActivityHistory();
@@ -273,6 +295,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             var result = new RecoverySelfTestRunner().Run(_ => true);
             if (!result.Passed)
             {
+                _recoverySelfTestRunning = false;
                 MessageBox.Show(
                     $"복구 기능 자체 테스트가 실패했습니다.\n\n{result.Failure}",
                     "복구 기능 테스트",
@@ -295,16 +318,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 SourceKind: ActivitySourceKind.ChatGptWeb);
 
             HandleActivity(required);
-            HandleActivity(required with
-            {
-                Status = ActivityStatus.Recovered,
-                Summary = "[테스트] 자동 복구 · 최대 3회/중복 억제/reset 검증 완료",
-                OccurredAt = DateTimeOffset.Now
-            });
         }
-        finally
+        catch
         {
             _recoverySelfTestRunning = false;
+            throw;
         }
     }
 
