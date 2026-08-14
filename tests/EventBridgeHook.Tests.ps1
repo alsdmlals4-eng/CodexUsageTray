@@ -154,6 +154,43 @@ try {
     Assert-Equal '' $powerShellPromptOutputHex `
         'UserPromptSubmit emits zero stdout bytes from Codex PowerShell'
 
+    $unicodeSummary = '한글 알림 🔔'
+    $unicodePromptPayload = [ordered]@{
+        session_id = 'integration-unicode'
+        turn_id = 'turn-unicode'
+        cwd = $testRoot
+        hook_event_name = 'UserPromptSubmit'
+        prompt = $unicodeSummary
+        permission_mode = 'default'
+    } | ConvertTo-Json -Compress
+    $activityPipe = [System.IO.Pipes.NamedPipeServerStream]::new(
+        'CodexUsageTray.Activity.v1',
+        [System.IO.Pipes.PipeDirection]::In,
+        1,
+        [System.IO.Pipes.PipeTransmissionMode]::Byte,
+        [System.IO.Pipes.PipeOptions]::Asynchronous)
+    $reader = $null
+    try {
+        $connectionTask = $activityPipe.WaitForConnectionAsync()
+        $unicodeOutputHex = Invoke-InstalledHookCommandFromPowerShell `
+            -Payload $unicodePromptPayload `
+            -CommandLine $promptCommand
+        Assert-Equal 0 $script:LastWrapperExitCode `
+            "Unicode prompt hook exits successfully; stderr=<$script:LastWrapperError>"
+        Assert-Equal '' $unicodeOutputHex 'Unicode UserPromptSubmit emits zero stdout bytes'
+        Assert-Equal $true $connectionTask.Wait(5000) 'Unicode activity reaches the tray pipe'
+        $reader = [System.IO.StreamReader]::new(
+            $activityPipe,
+            (New-Object System.Text.UTF8Encoding($false)))
+        $receivedActivity = $reader.ReadLine() | ConvertFrom-Json
+        Assert-Equal $unicodeSummary $receivedActivity.summary `
+            'PowerShell wrapper preserves Korean and emoji Hook JSON'
+    }
+    finally {
+        if ($reader) { $reader.Dispose() }
+        $activityPipe.Dispose()
+    }
+
     $powerShellStopOutputHex = Invoke-InstalledHookCommandFromPowerShell `
         -Payload $stopPayload `
         -CommandLine $stopCommand
@@ -183,4 +220,4 @@ finally {
     }
 }
 
-Write-Host '12 EventBridge Hook integration assertions passed'
+Write-Host '16 EventBridge Hook integration assertions passed'
