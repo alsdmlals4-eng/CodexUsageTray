@@ -16,7 +16,9 @@ internal static class Program
             ("disconnected waiting schedules bounded reload attempts", TestDisconnectedReloadSchedule),
             ("duplicate disconnected signals do not double schedule", TestDuplicateDisconnectedSignal),
             ("recovered or completed activity resets reconnect state", TestRecoveryReset),
-            ("reload command preserves exact browser source identity", TestReloadCommand)
+            ("reload command preserves exact browser source identity", TestReloadCommand),
+            ("recovery job validates bounded execution contract", TestRecoveryJobValidation),
+            ("recovery state is saved and loaded atomically", TestRecoveryStateRoundTrip)
         };
 
         var failures = 0;
@@ -134,6 +136,60 @@ internal static class Program
         Equal("reload", parsed!.Action, "parsed reload action");
     }
 
+    private static void TestRecoveryJobValidation()
+    {
+        const string valid = """
+        {
+          "jobId": "base-20260815-001",
+          "model": "gpt-5",
+          "prompt": "Continue only the unfinished approved work.",
+          "maxAttempts": 3,
+          "timeoutSeconds": 900
+        }
+        """;
+        var job = RecoveryJob.Parse(valid);
+        Equal("base-20260815-001", job.JobId, "job id");
+        Equal("gpt-5", job.Model, "model");
+        Equal(3, job.MaxAttempts, "max attempts");
+        Equal(900, job.TimeoutSeconds, "timeout seconds");
+
+        Throws<InvalidDataException>(() => RecoveryJob.Parse(valid.Replace("\"maxAttempts\": 3", "\"maxAttempts\": 0")));
+        Throws<InvalidDataException>(() => RecoveryJob.Parse(valid.Replace("\"timeoutSeconds\": 900", "\"timeoutSeconds\": 5")));
+        Throws<InvalidDataException>(() => RecoveryJob.Parse(valid.Replace("\"model\": \"gpt-5\"", "\"model\": \"\"")));
+    }
+
+    private static void TestRecoveryStateRoundTrip()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"CodexUsageTray-Recovery-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "state.json");
+            var state = new RecoveryExecutionState(
+                new RecoveryJob("job-1", "gpt-5", "continue", 3, 900),
+                RecoveryExecutionStatus.Running,
+                Attempt: 1,
+                ResponseId: null,
+                OutputText: string.Empty,
+                LastError: null,
+                ClientRequestId: "a3ec835f-c3df-44ba-8a25-2907e575ce22",
+                UpdatedAt: ObservedAt);
+
+            RecoveryStateStore.SaveAtomic(path, state);
+            var loaded = RecoveryStateStore.Load(path);
+            Equal(state.Job, loaded.Job, "job snapshot");
+            Equal(state.Status, loaded.Status, "status");
+            Equal(state.Attempt, loaded.Attempt, "attempt");
+            Equal(state.ClientRequestId, loaded.ClientRequestId, "request id");
+            True(File.Exists(path), "state file exists");
+            True(!File.Exists(path + ".tmp"), "temporary state file is not left behind");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static ActivityEvent Parse(
         string status,
         string reason,
@@ -179,5 +235,19 @@ internal static class Program
         {
             throw new InvalidOperationException(message);
         }
+    }
+
+    private static void Throws<TException>(Action action) where TException : Exception
+    {
+        try
+        {
+            action();
+        }
+        catch (TException)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
     }
 }
