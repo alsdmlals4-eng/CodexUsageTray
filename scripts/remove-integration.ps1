@@ -4,7 +4,10 @@ param()
 $ErrorActionPreference = 'Stop'
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
 $hooksPath = Join-Path $codexHome 'hooks.json'
-$markers = @('CodexUsageTray.EventBridge.exe', 'invoke-codex-hook.cmd')
+$markers = @(
+    'CodexUsageTray.EventBridge.exe',
+    'invoke-codex-hook.cmd',
+    'invoke-codex-hook.ps1')
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $nativeHostName = 'com.alsdmlals4.codexusagetray'
 $installDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -96,6 +99,10 @@ finally {
         -ErrorAction SilentlyContinue
     Remove-Item `
         -LiteralPath (Join-Path $installDirectory 'invoke-codex-hook.cmd') `
+        -Force `
+        -ErrorAction SilentlyContinue
+    Remove-Item `
+        -LiteralPath (Join-Path $installDirectory 'invoke-codex-hook.ps1') `
         -Force `
         -ErrorAction SilentlyContinue
 }

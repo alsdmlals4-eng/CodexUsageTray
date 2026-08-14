@@ -389,12 +389,14 @@ if ($env:OS -eq 'Windows_NT') {
         $installedHooks = Get-Content -LiteralPath (Join-Path $integrationCodexHome 'hooks.json') -Raw | ConvertFrom-Json
         foreach ($eventName in @('UserPromptSubmit', 'PermissionRequest', 'Stop')) {
             $usageTrayHandlers = @($installedHooks.hooks.$eventName | ForEach-Object { $_.hooks } | Where-Object {
-                $_.commandWindows -match 'invoke-codex-hook\.cmd'
+                $_.commandWindows -match 'invoke-codex-hook\.ps1'
             })
             Assert-Equal 1 $usageTrayHandlers.Count "$eventName installs exactly one resilient hook wrapper"
             Assert-Equal 15 $usageTrayHandlers[0].timeout "$eventName allows bridge cold start time"
             Assert-True $usageTrayHandlers[0].commandWindows.EndsWith(" $eventName") `
                 "$eventName passes its trusted event name outside the Hook payload"
+            Assert-True $usageTrayHandlers[0].commandWindows.StartsWith('powershell.exe ') `
+                "$eventName uses a command line accepted by both PowerShell and cmd"
         }
 
         $preservedUserHandlers = @($installedHooks.hooks.Stop | ForEach-Object { $_.hooks } | Where-Object {
@@ -402,14 +404,15 @@ if ($env:OS -eq 'Windows_NT') {
         })
         Assert-Equal 1 $preservedUserHandlers.Count 'setup preserves unrelated user Stop hooks'
 
-        $wrapperPath = Join-Path $integrationInstallDirectory 'invoke-codex-hook.cmd'
+        $wrapperPath = Join-Path $integrationInstallDirectory 'invoke-codex-hook.ps1'
         Assert-True (Test-Path -LiteralPath $wrapperPath -PathType Leaf) 'setup creates the Codex hook wrapper'
         $wrapperBytes = [System.IO.File]::ReadAllBytes($wrapperPath)
         Assert-Equal 0 @($wrapperBytes | Where-Object { $_ -gt 0x7F }).Count 'Codex hook wrapper is ASCII'
         $wrapperText = [System.IO.File]::ReadAllText($wrapperPath)
-        Assert-True $wrapperText.Contains('%~dp0CodexUsageTray.EventBridge.exe') 'hook wrapper launches its installed event bridge'
-        Assert-True $wrapperText.Contains('--hook "%~1"') 'hook wrapper forwards the trusted configured event name'
-        Assert-True $wrapperText.Contains('exit /b 0') 'hook wrapper never reports notification delivery as a Codex failure'
+        Assert-True $wrapperText.Contains("Join-Path `$PSScriptRoot 'CodexUsageTray.EventBridge.exe'") 'hook wrapper launches its installed event bridge'
+        Assert-True $wrapperText.Contains('--hook $EventName') 'hook wrapper forwards the trusted configured event name'
+        Assert-True $wrapperText.Contains('UTF8Encoding($false)') 'hook wrapper preserves Unicode Hook JSON input'
+        Assert-True $wrapperText.Contains('exit 0') 'hook wrapper never reports notification delivery as a Codex failure'
     }
     finally {
         $env:CODEX_HOME = $previousCodexHome
