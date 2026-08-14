@@ -42,6 +42,7 @@ jobs:
           Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\completion-state.js')
           Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\recovery-watchdog.js')
           Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\recovery-dom.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\recovery-action-controller.js')
           Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\runtime-messaging.js')
           Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\content.js')
           Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\tab-focus.js')
@@ -52,6 +53,7 @@ jobs:
           Invoke-NodeChecked -Arguments @('.\tests\browser-extension\tab-focus.test.js')
           Invoke-NodeChecked -Arguments @('.\tests\browser-extension\recovery-watchdog.test.js')
           Invoke-NodeChecked -Arguments @('.\tests\browser-extension\recovery-dom.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\recovery-action-controller.test.js')
 
       - name: Test Windows PowerShell compatibility and installers
         shell: pwsh
