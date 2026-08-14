@@ -65,6 +65,33 @@ jobs:
               throw "PowerShell installer tests failed with exit code $LASTEXITCODE."
           }
 
+      - name: Validate recovery release wiring
+        shell: pwsh
+        run: |
+          $manifest = Get-Content .\browser-extension\manifest.json -Raw | ConvertFrom-Json
+          $releaseVersion = (Get-Content .\.release-version -Raw).Trim()
+          if ($manifest.version -ne '1.3.0' -or $releaseVersion -ne 'v1.3.0') {
+            throw "Recovery release versions are inconsistent: extension=$($manifest.version), release=$releaseVersion"
+          }
+
+          $releaseWorkflow = Get-Content .\.github\workflows\release.yml -Raw
+          $installer = Get-Content .\scripts\install-release.ps1 -Raw
+          $builder = Get-Content .\scripts\build-windows.ps1 -Raw
+          foreach ($term in @(
+              'CodexUsageTray.RecoveryRunner.exe',
+              'CodexUsageTray.RecoveryRunner.csproj',
+              'recovery-action-controller.js')) {
+            if (-not $releaseWorkflow.Contains($term)) {
+              throw "Release workflow is missing recovery artifact wiring: $term"
+            }
+          }
+          if (-not $installer.Contains("'CodexUsageTray.RecoveryRunner.exe'")) {
+            throw 'Installer is missing optional RecoveryRunner wiring.'
+          }
+          if (-not $builder.Contains('CodexUsageTray.RecoveryRunner.exe')) {
+            throw 'Windows builder is missing RecoveryRunner publication validation.'
+          }
+
       - name: Test core logic
         shell: pwsh
         run: |
