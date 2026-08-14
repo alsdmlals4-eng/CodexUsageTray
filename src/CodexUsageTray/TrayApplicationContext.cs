@@ -456,7 +456,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             {
                 var executablePath = Environment.ProcessPath ??
                     Path.Combine(AppContext.BaseDirectory, "CodexUsageTray.exe");
-                if (!_restartLauncher.TryStart(executablePath))
+                if (!_restartLauncher.TryStart(executablePath, Environment.ProcessId))
                 {
                     MessageBox.Show(
                         $"Codex Usage Tray를 다시 시작하지 못했습니다.\n\n{executablePath}",
