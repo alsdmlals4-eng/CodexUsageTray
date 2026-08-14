@@ -39,6 +39,7 @@ jobs:
           node .\tests\browser-extension\content-runtime.test.js
           node .\tests\browser-extension\manifest.test.js
           node .\tests\browser-extension\tab-focus.test.js
+          node .\tests\browser-extension\recovery-watchdog.test.js
 
       - name: Test Windows PowerShell compatibility and installers
         shell: pwsh
