@@ -393,6 +393,8 @@ if ($env:OS -eq 'Windows_NT') {
             })
             Assert-Equal 1 $usageTrayHandlers.Count "$eventName installs exactly one resilient hook wrapper"
             Assert-Equal 15 $usageTrayHandlers[0].timeout "$eventName allows bridge cold start time"
+            Assert-True $usageTrayHandlers[0].commandWindows.EndsWith(" $eventName") `
+                "$eventName passes its trusted event name outside the Hook payload"
         }
 
         $preservedUserHandlers = @($installedHooks.hooks.Stop | ForEach-Object { $_.hooks } | Where-Object {
@@ -406,6 +408,7 @@ if ($env:OS -eq 'Windows_NT') {
         Assert-Equal 0 @($wrapperBytes | Where-Object { $_ -gt 0x7F }).Count 'Codex hook wrapper is ASCII'
         $wrapperText = [System.IO.File]::ReadAllText($wrapperPath)
         Assert-True $wrapperText.Contains('%~dp0CodexUsageTray.EventBridge.exe') 'hook wrapper launches its installed event bridge'
+        Assert-True $wrapperText.Contains('--hook "%~1"') 'hook wrapper forwards the trusted configured event name'
         Assert-True $wrapperText.Contains('exit /b 0') 'hook wrapper never reports notification delivery as a Codex failure'
     }
     finally {
