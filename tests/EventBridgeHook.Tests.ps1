@@ -28,27 +28,41 @@ function Assert-Equal {
     Write-Host "PASS $Message"
 }
 
-function Invoke-HookWrapper {
+function Invoke-InstalledHookCommand {
     param(
         [Parameter(Mandatory = $true)][string]$Payload,
-        [Parameter(Mandatory = $true)][string]$WrapperPath,
-        [Parameter(Mandatory = $true)][string]$EventName
+        [Parameter(Mandatory = $true)][string]$CommandLine
     )
 
     $inputPath = [System.IO.Path]::GetTempFileName()
     $outputPath = [System.IO.Path]::GetTempFileName()
+    $errorPath = [System.IO.Path]::GetTempFileName()
     try {
         $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($inputPath, $Payload, $utf8WithoutBom)
-        $command = "call `"$WrapperPath`" $EventName < `"$inputPath`" > `"$outputPath`""
+        $command = "$CommandLine < `"$inputPath`" > `"$outputPath`" 2> `"$errorPath`""
         cmd.exe /D /S /C $command | Out-Null
         $script:LastWrapperExitCode = $LASTEXITCODE
+        $script:LastWrapperError = [System.IO.File]::ReadAllText($errorPath)
         return [System.BitConverter]::ToString([System.IO.File]::ReadAllBytes($outputPath))
     }
     finally {
         Remove-Item -LiteralPath $inputPath -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $errorPath -Force -ErrorAction SilentlyContinue
     }
+}
+
+function Get-InstalledHookCommand {
+    param(
+        [Parameter(Mandatory = $true)][object]$Hooks,
+        [Parameter(Mandatory = $true)][string]$EventName
+    )
+
+    $handlers = @($Hooks.hooks.$EventName | ForEach-Object { $_.hooks } | Where-Object {
+        $_.commandWindows -match 'CodexUsageTray'
+    })
+    return [string]$handlers[0].commandWindows
 }
 
 try {
@@ -60,7 +74,10 @@ try {
     $env:CODEX_HOME = $codexHome
     & $setupPath -BridgePath $installedBridge
 
-    $wrapperPath = Join-Path $installDirectory 'invoke-codex-hook.cmd'
+    $installedHooks = Get-Content -LiteralPath (Join-Path $codexHome 'hooks.json') -Raw | ConvertFrom-Json
+    $stopCommand = Get-InstalledHookCommand -Hooks $installedHooks -EventName 'Stop'
+    $promptCommand = Get-InstalledHookCommand -Hooks $installedHooks -EventName 'UserPromptSubmit'
+    $permissionCommand = Get-InstalledHookCommand -Hooks $installedHooks -EventName 'PermissionRequest'
     $stopPayload = [ordered]@{
         session_id = 'integration-stop'
         turn_id = 'turn-stop'
@@ -70,16 +87,16 @@ try {
         last_assistant_message = 'Stop hook JSON integration test'
         permission_mode = 'default'
     } | ConvertTo-Json -Compress
-    $stopOutputHex = Invoke-HookWrapper -Payload $stopPayload -WrapperPath $wrapperPath -EventName 'Stop'
-    Assert-Equal 0 $script:LastWrapperExitCode 'installed Stop hook wrapper exits successfully'
+    $stopOutputHex = Invoke-InstalledHookCommand -Payload $stopPayload -CommandLine $stopCommand
+    Assert-Equal 0 $script:LastWrapperExitCode `
+        "installed Stop hook command exits successfully; stderr=<$script:LastWrapperError>"
     Assert-Equal '7B-22-63-6F-6E-74-69-6E-75-65-22-3A-74-72-75-65-7D' $stopOutputHex `
         'installed Stop hook wrapper emits exact JSON bytes without BOM or newline'
 
     $invalidStopPayload = 'not-json'
-    $invalidStopOutputHex = Invoke-HookWrapper `
+    $invalidStopOutputHex = Invoke-InstalledHookCommand `
         -Payload $invalidStopPayload `
-        -WrapperPath $wrapperPath `
-        -EventName 'Stop'
+        -CommandLine $stopCommand
     Assert-Equal 0 $script:LastWrapperExitCode 'notification parsing failure never fails the Stop hook'
     Assert-Equal '7B-22-63-6F-6E-74-69-6E-75-65-22-3A-74-72-75-65-7D' $invalidStopOutputHex `
         'malformed Stop input still emits exact success JSON bytes'
@@ -92,19 +109,19 @@ try {
         prompt = 'Prompt hook output isolation test'
         permission_mode = 'default'
     } | ConvertTo-Json -Compress
-    $promptOutputHex = Invoke-HookWrapper `
+    $promptOutputHex = Invoke-InstalledHookCommand `
         -Payload $promptPayload `
-        -WrapperPath $wrapperPath `
-        -EventName 'UserPromptSubmit'
-    Assert-Equal 0 $script:LastWrapperExitCode 'installed prompt hook wrapper exits successfully'
+        -CommandLine $promptCommand
+    Assert-Equal 0 $script:LastWrapperExitCode `
+        "installed prompt hook command exits successfully; stderr=<$script:LastWrapperError>"
     Assert-Equal '' $promptOutputHex 'UserPromptSubmit emits zero stdout bytes'
 
     $spoofedPermissionPayload = $stopPayload
-    $permissionOutputHex = Invoke-HookWrapper `
+    $permissionOutputHex = Invoke-InstalledHookCommand `
         -Payload $spoofedPermissionPayload `
-        -WrapperPath $wrapperPath `
-        -EventName 'PermissionRequest'
-    Assert-Equal 0 $script:LastWrapperExitCode 'installed permission hook wrapper exits successfully'
+        -CommandLine $permissionCommand
+    Assert-Equal 0 $script:LastWrapperExitCode `
+        "installed permission hook command exits successfully; stderr=<$script:LastWrapperError>"
     Assert-Equal '' $permissionOutputHex 'PermissionRequest emits zero stdout bytes even when input claims Stop'
 
 }
