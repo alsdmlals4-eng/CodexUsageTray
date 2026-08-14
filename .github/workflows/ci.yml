@@ -83,6 +83,15 @@ jobs:
               throw "Recovery tests failed with exit code $LASTEXITCODE."
           }
 
+      - name: Test RecoveryRunner logic
+        shell: pwsh
+        run: |
+          dotnet run --configuration Release `
+              --project .\tests\CodexUsageTray.RecoveryRunner.Tests\CodexUsageTray.RecoveryRunner.Tests.csproj
+          if ($LASTEXITCODE -ne 0) {
+              throw "RecoveryRunner tests failed with exit code $LASTEXITCODE."
+          }
+
       - name: Test Windows UI regressions
         shell: pwsh
         run: |
