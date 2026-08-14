@@ -10,6 +10,7 @@
   const RETRY_DELAYS = [3000, 10000, 30000];
   const TRANSIENT_ERROR_MARKERS = [
     "메시지 전송 시간이 초과되었습니다",
+    "연결이 끊어졌습니다. 전체 답변을 기다리는 중입니다",
     "message timed out",
     "network error",
     "something went wrong",
