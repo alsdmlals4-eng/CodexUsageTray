@@ -152,4 +152,5 @@ Write-Host "ChatGPT 웹 네이티브 연결을 등록했습니다: $nativeManife
 $extensionDirectory = Join-Path $installDirectory 'browser-extension'
 if (Test-Path -LiteralPath $extensionDirectory -PathType Container) {
     Write-Host "Chrome/Edge 확장 관리 화면에서 이 폴더를 한 번 로드하세요: $extensionDirectory"
+    Write-Host '확장을 처음 로드하거나 새로고침한 뒤, 열려 있던 모든 ChatGPT 탭도 새로고침하세요.'
 }
