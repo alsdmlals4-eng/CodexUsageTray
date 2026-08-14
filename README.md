@@ -161,6 +161,12 @@ Codex에 `Stop hook (failed): hook returned invalid stop hook JSON output`이 �
 `chatgpt.com` 탭을 새로고침하세요. 확장 오류에 `Native host has exited`가 보이면
 한 줄 설치 명령을 다시 실행해 네이티브 연결을 재등록합니다.
 
+확장 오류에 `Cannot read properties of undefined (reading 'sendMessage')`가 보이면
+확장을 새로고침하기 전에 열려 있던 ChatGPT 탭의 확장 컨텍스트가 만료된 것입니다.
+오류 화면의 **모두 삭제**는 기록만 지우므로 해당 ChatGPT 탭에서 `Ctrl+Shift+R`을
+누르세요. `v1.2.5`부터 만료된 탭의 감시를 안전하게 중단해 같은 오류가 반복해서
+쌓이지 않으며, 탭을 새로고침하면 웹 완료·승인 알림이 다시 연결됩니다.
+
 Hook을 다시 병합하려면 설치 폴더에서 다음 명령을 실행합니다.
 
 ```powershell
@@ -169,7 +175,7 @@ Hook을 다시 병합하려면 설치 폴더에서 다음 명령을 실행합니
 
 ### 업데이트
 
-가장 쉬운 설치 방법의 한 줄 명령을 다시 실행하세요. 실행 중인 앱을 안전하게 종료하고 새 버전으로 교체한 뒤 다시 실행합니다. Hook 정의가 바뀌었다면 Codex를 다시 시작한 뒤 `/hooks`에서 다시 검토·신뢰합니다. 웹 확장 코드가 바뀐 버전은 `chrome://extensions` 또는 `edge://extensions`의 확장 카드에서 **새로고침**을 누른 뒤 열려 있던 ChatGPT 탭도 한 번 새로고침합니다.
+가장 쉬운 설치 방법의 한 줄 명령을 다시 실행하세요. 실행 중인 앱을 안전하게 종료하고 새 버전으로 교체한 뒤 다시 실행합니다. Hook 정의가 바뀌었다면 Codex를 다시 시작한 뒤 `/hooks`에서 다시 검토·신뢰합니다. 웹 확장 코드가 바뀐 버전은 `chrome://extensions` 또는 `edge://extensions`의 확장 카드에서 **새로고침**을 누른 뒤 열려 있던 모든 ChatGPT 탭도 한 번 새로고침합니다.
 
 `v1.2.2` 이하에서 업데이트 중 `파일이 다른 프로세스에서 사용되고 있으므로`라는
 `Move-Item` 오류가 나타나면 웹 ChatGPT 확장의 EventBridge가 설치 폴더를 사용 중인

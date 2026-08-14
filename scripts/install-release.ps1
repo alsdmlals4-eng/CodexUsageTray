@@ -283,5 +283,5 @@ if (-not $DoNotLaunch) {
 Write-Host "설치 완료: $installedExecutable"
 if (-not $SkipCodexHooks) {
     Write-Host 'Codex를 다시 시작한 뒤 /hooks에서 Codex Usage Tray Hook을 검토하고 신뢰하세요.'
-    Write-Host '웹 ChatGPT 알림은 Chrome/Edge 확장 관리 화면에서 설치 폴더의 browser-extension을 로드하거나 기존 확장을 새로고침하세요.'
+    Write-Host '웹 ChatGPT 알림은 Chrome/Edge 확장 관리 화면에서 설치 폴더의 browser-extension을 로드하거나 기존 확장을 새로고침한 뒤, 열려 있던 모든 ChatGPT 탭도 새로고침하세요.'
 }

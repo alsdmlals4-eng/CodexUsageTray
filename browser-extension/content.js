@@ -12,6 +12,21 @@ const REJECT_WORDS = ["deny", "reject", "cancel", "거부", "취소"];
 const seenApprovalContainers = new WeakSet();
 const completionState = new CodexUsageTrayCompletionState.CompletionState(2000);
 let completionSequence = 0;
+let monitoringStopped = false;
+let monitoringIntervalId = null;
+
+function stopMonitoring() {
+  if (monitoringStopped) {
+    return;
+  }
+
+  monitoringStopped = true;
+  observer.disconnect();
+  if (monitoringIntervalId !== null) {
+    clearInterval(monitoringIntervalId);
+    monitoringIntervalId = null;
+  }
+}
 
 function getConversationUrl() {
   const url = new URL(location.href);
@@ -71,25 +86,34 @@ function findNewApprovalContainer() {
 }
 
 function sendActivity(status, activityId) {
+  if (monitoringStopped) {
+    return;
+  }
+
   const url = getConversationUrl();
   if (!url) {
     return;
   }
 
-  chrome.runtime.sendMessage({
-    type: "codex-usage-tray-activity",
-    activity: {
-      status,
-      activityId,
-      url,
-      title: getSafeTitle()
-    }
-  }).catch(() => {
-    // The tray integration may not be installed yet; ChatGPT must keep working.
-  });
+  CodexUsageTrayRuntimeMessaging.sendRuntimeMessage(
+    globalThis.chrome?.runtime,
+    {
+      type: "codex-usage-tray-activity",
+      activity: {
+        status,
+        activityId,
+        url,
+        title: getSafeTitle()
+      }
+    },
+    stopMonitoring);
 }
 
 function inspectPage(assistantMutated = false) {
+  if (monitoringStopped) {
+    return;
+  }
+
   const result = completionState.observe({
     now: Date.now(),
     generating: isGenerating(),
@@ -120,6 +144,10 @@ function mutationsTouchAssistantResponse(mutations) {
 let inspectionScheduled = false;
 let pendingAssistantMutation = false;
 const observer = new MutationObserver((mutations) => {
+  if (monitoringStopped) {
+    return;
+  }
+
   pendingAssistantMutation = pendingAssistantMutation ||
     mutationsTouchAssistantResponse(mutations);
   if (inspectionScheduled) {
@@ -128,6 +156,10 @@ const observer = new MutationObserver((mutations) => {
 
   inspectionScheduled = true;
   setTimeout(() => {
+    if (monitoringStopped) {
+      return;
+    }
+
     inspectionScheduled = false;
     const assistantMutated = pendingAssistantMutation;
     pendingAssistantMutation = false;
@@ -141,5 +173,5 @@ observer.observe(document.documentElement, {
   attributes: true,
   attributeFilter: ["aria-label", "data-testid", "disabled"]
 });
-setInterval(() => inspectPage(false), 500);
+monitoringIntervalId = setInterval(() => inspectPage(false), 500);
 inspectPage(false);

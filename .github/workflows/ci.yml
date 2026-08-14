@@ -31,9 +31,13 @@ jobs:
           }
           node --check .\browser-extension\background.js
           node --check .\browser-extension\completion-state.js
+          node --check .\browser-extension\runtime-messaging.js
           node --check .\browser-extension\content.js
           node --check .\browser-extension\tab-focus.js
           node .\tests\browser-extension\completion-state.test.js
+          node .\tests\browser-extension\runtime-messaging.test.js
+          node .\tests\browser-extension\content-runtime.test.js
+          node .\tests\browser-extension\manifest.test.js
           node .\tests\browser-extension\tab-focus.test.js
 
       - name: Test Windows PowerShell compatibility and installers
