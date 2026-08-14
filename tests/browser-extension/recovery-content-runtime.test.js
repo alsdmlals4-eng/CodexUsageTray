@@ -103,7 +103,7 @@ calls = runScenario({
   safeCandidate: false,
   watchdogResult: { action: "recovery_required", reason: "unsafe_or_missing_retry_control" }
 });
-assert.deepEqual(calls.required, [{
+assert.deepEqual(JSON.parse(JSON.stringify(calls.required)), [{
   routeKey: "https://chatgpt.com/c/recovery-thread",
   reason: "disconnected_waiting"
 }], "a disconnected waiting state without a safe button must route to reconnect recovery");
