@@ -33,6 +33,7 @@ internal static class Program
         }
 
         var input = await Console.In.ReadToEndAsync();
+        var eventName = TryGetEventName(input);
         try
         {
             var activity = ActivityEventParser.ParseHook(input, DateTimeOffset.Now);
@@ -43,6 +44,10 @@ internal static class Program
         catch
         {
             // An alerting failure must never change the Codex operation or approval decision.
+        }
+        finally
+        {
+            Console.Out.Write(HookProtocolOutput.GetSuccessJson(eventName));
         }
 
         return 0;
@@ -183,6 +188,21 @@ internal static class Program
         finally
         {
             outputGate.Release();
+        }
+    }
+
+    private static string? TryGetEventName(string input)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(input);
+            return document.RootElement.TryGetProperty("hook_event_name", out var property)
+                ? property.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 
