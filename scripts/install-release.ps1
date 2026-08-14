@@ -13,10 +13,12 @@ $requiredFiles = @(
     'CodexUsageTray.EventBridge.exe',
     'setup-integration.ps1',
     'remove-integration.ps1',
-    'install-release.ps1',
+    'install-release.ps1'
+)
+$optionalFiles = @(
+    'CodexUsageTray.RecoveryRunner.exe',
     'shortcut-registration.ps1'
 )
-$optionalFiles = @('CodexUsageTray.RecoveryRunner.exe')
 $requiredDirectories = @('browser-extension')
 $resolvedPackage = (Resolve-Path -LiteralPath $PackageDirectory).Path
 $resolvedInstall = [System.IO.Path]::GetFullPath($InstallDirectory)
