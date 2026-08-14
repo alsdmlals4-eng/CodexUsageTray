@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CodexUsageTray.Core;
 
 namespace CodexUsageTray.Recovery.Tests;
@@ -14,7 +15,8 @@ internal static class Program
             ("web recovery statuses parse into safe activity events", TestRecoveryStatusParsing),
             ("disconnected waiting schedules bounded reload attempts", TestDisconnectedReloadSchedule),
             ("duplicate disconnected signals do not double schedule", TestDuplicateDisconnectedSignal),
-            ("recovered or completed activity resets reconnect state", TestRecoveryReset)
+            ("recovered or completed activity resets reconnect state", TestRecoveryReset),
+            ("reload command preserves exact browser source identity", TestReloadCommand)
         };
 
         var failures = 0;
@@ -116,11 +118,34 @@ internal static class Program
         Equal(1, afterCompleted!.Attempt, "completion resets attempt count");
     }
 
-    private static ActivityEvent Parse(string status, string reason, int? attempt = null)
+    private static void TestReloadCommand()
+    {
+        var activity = Parse("recovery_required", "disconnected_waiting", tabId: 21, windowId: 8)
+            .WithBrowserConnection("7fdd2a14-773f-4a31-92a0-1c0abf5f4600");
+        var command = BrowserActivationCommand.ForReload(activity);
+        Equal("reload", command.Action, "reload action");
+        Equal("https://chatgpt.com/c/recovery-thread", command.Url, "safe normalized URL");
+        Equal(21, command.TabId, "exact tab id");
+        Equal(8, command.WindowId, "exact window id");
+
+        var json = JsonSerializer.Serialize(command);
+        True(BrowserActivationCommand.TryParse(json, out var parsed), "reload command must parse");
+        NotNull(parsed, "parsed reload command");
+        Equal("reload", parsed!.Action, "parsed reload action");
+    }
+
+    private static ActivityEvent Parse(
+        string status,
+        string reason,
+        int? attempt = null,
+        int? tabId = null,
+        int? windowId = null)
     {
         var reasonJson = string.IsNullOrEmpty(reason) ? string.Empty : $",\"reason\":\"{reason}\"";
         var attemptJson = attempt.HasValue ? $",\"attempt\":{attempt.Value}" : string.Empty;
-        var json = $"{{\"status\":\"{status}\",\"activityId\":\"recovery-{status}\",\"url\":\"https://chatgpt.com/c/recovery-thread\",\"title\":\"Recovery Test\"{reasonJson}{attemptJson}}}";
+        var tabJson = tabId.HasValue ? $",\"tabId\":{tabId.Value}" : string.Empty;
+        var windowJson = windowId.HasValue ? $",\"windowId\":{windowId.Value}" : string.Empty;
+        var json = $"{{\"status\":\"{status}\",\"activityId\":\"recovery-{status}\",\"url\":\"https://chatgpt.com/c/recovery-thread\",\"title\":\"Recovery Test\"{reasonJson}{attemptJson}{tabJson}{windowJson}}}";
         return BrowserActivityEventParser.Parse(json, ObservedAt);
     }
 
@@ -143,6 +168,14 @@ internal static class Program
     private static void NotNull<T>(T? value, string message) where T : class
     {
         if (value is null)
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
+    private static void True(bool value, string message)
+    {
+        if (!value)
         {
             throw new InvalidOperationException(message);
         }
