@@ -9,6 +9,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 {
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(30);
+    private const string RecoverySelfTestDetail = "recovery_self_test";
 
     private readonly CodexAppServerClient _client = new();
     private readonly CancellationTokenSource _shutdown = new();
@@ -31,6 +32,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private string? _lastError;
     private Task _activeRefreshTask = Task.CompletedTask;
     private bool _isRefreshing;
+    private bool _recoverySelfTestRunning;
     private bool _exiting;
     private bool _shutdownComplete;
 
@@ -67,6 +69,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _startupItem.Click += (_, _) => ToggleStartup();
         menu.Items.Add(_startupItem);
+        menu.Items.Add("복구 기능 테스트", null, (_, _) => RunRecoverySelfTest());
         menu.Items.Add("앱 다시 시작", null, async (_, _) => await RestartAsync());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("종료", null, async (_, _) => await ShutdownAsync());
@@ -185,6 +188,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _popupQueue.Enqueue(activity);
         }
 
+        var isRecoverySelfTest = string.Equals(
+            activity.Detail,
+            RecoverySelfTestDetail,
+            StringComparison.Ordinal);
+        if (isRecoverySelfTest)
+        {
+            return;
+        }
+
         MobileNotificationRuntime.NotifyShared(activity, _shutdown.Token);
 
         var instruction = _browserRecovery.Plan(activity);
@@ -246,6 +258,54 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         UpdateActivities();
         _activityForm.ShowAndActivate();
+    }
+
+    private void RunRecoverySelfTest()
+    {
+        if (_exiting || _recoverySelfTestRunning)
+        {
+            return;
+        }
+
+        _recoverySelfTestRunning = true;
+        try
+        {
+            var result = new RecoverySelfTestRunner().Run(_ => true);
+            if (!result.Passed)
+            {
+                MessageBox.Show(
+                    $"복구 기능 자체 테스트가 실패했습니다.\n\n{result.Failure}",
+                    "복구 기능 테스트",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                return;
+            }
+
+            var sessionId = $"recovery-self-test:{Guid.NewGuid():N}";
+            var required = new ActivityEvent(
+                SessionId: sessionId,
+                TurnId: "recovery-self-test",
+                WorkingDirectory: string.Empty,
+                ProjectName: "Codex Usage Tray",
+                ChatLabel: "복구 기능 테스트",
+                Status: ActivityStatus.RecoveryRequired,
+                Summary: "[테스트] 복구 필요 · 재시도 정책 3/10/30초 검증",
+                Detail: RecoverySelfTestDetail,
+                OccurredAt: DateTimeOffset.Now,
+                SourceKind: ActivitySourceKind.ChatGptWeb);
+
+            HandleActivity(required);
+            HandleActivity(required with
+            {
+                Status = ActivityStatus.Recovered,
+                Summary = "[테스트] 자동 복구 · 최대 3회/중복 억제/reset 검증 완료",
+                OccurredAt = DateTimeOffset.Now
+            });
+        }
+        finally
+        {
+            _recoverySelfTestRunning = false;
+        }
     }
 
     private void UpdateTrayIcon(UsageSnapshot snapshot)
