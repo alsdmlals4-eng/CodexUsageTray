@@ -19,9 +19,10 @@ internal static class Program
             BrowserActivatorSendsExactSourceIdentity();
             RestartLauncherUsesExactExecutablePath();
             RestartLauncherFailsClosedWhenProcessStartThrows();
+            TrayRestartMenuInvokesLauncher();
             UsageFailureDoesNotAssumeTheNetworkIsBroken();
             DiagnosticLogRedactsCredentialShapedText();
-            Console.WriteLine("8 Windows UI regression tests passed");
+            Console.WriteLine("9 Windows UI regression tests passed");
             return 0;
         }
         catch (Exception exception)
@@ -177,6 +178,42 @@ internal static class Program
 
         Assert(!launcher.TryStart(@"C:\Apps\CodexUsageTray\CodexUsageTray.exe"),
             "restart launcher must convert process start exceptions into a safe failure result");
+    }
+
+    private static void TrayRestartMenuInvokesLauncher()
+    {
+        string? observedPath = null;
+        var started = new ManualResetEventSlim(false);
+        var launcher = new ApplicationRestartLauncher(path =>
+        {
+            observedPath = path;
+            started.Set();
+            return true;
+        });
+        var context = new TrayApplicationContext(launcher);
+        var notifyIconField = typeof(TrayApplicationContext).GetField(
+            "_notifyIcon",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        var notifyIcon = notifyIconField?.GetValue(context) as NotifyIcon;
+        var restartItem = notifyIcon?.ContextMenuStrip?.Items
+            .Cast<ToolStripItem>()
+            .SingleOrDefault(item => string.Equals(item.Text, "앱 다시 시작", StringComparison.Ordinal));
+
+        Assert(restartItem is not null, "tray context menu must expose the app restart action");
+        restartItem!.PerformClick();
+
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (!started.IsSet && DateTime.UtcNow < deadline)
+        {
+            Application.DoEvents();
+            Thread.Sleep(10);
+        }
+
+        Assert(started.IsSet, "clicking the tray restart action must invoke the restart launcher");
+        var expectedPath = Path.GetFullPath(
+            Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "CodexUsageTray.exe"));
+        Assert(string.Equals(observedPath, expectedPath, StringComparison.OrdinalIgnoreCase),
+            "tray restart must target the exact current executable path");
     }
 
     private static void UsageFailureDoesNotAssumeTheNetworkIsBroken()
