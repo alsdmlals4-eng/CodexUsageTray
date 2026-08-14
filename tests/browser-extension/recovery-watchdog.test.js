@@ -8,6 +8,7 @@ const {
 } = require("../../browser-extension/recovery-watchdog.js");
 
 assert.equal(classifyTransientError("메시지 전송 시간이 초과되었습니다. 다시 시도해 주세요"), true);
+assert.equal(classifyTransientError("연결이 끊어졌습니다. 전체 답변을 기다리는 중입니다"), true);
 assert.equal(classifyTransientError("Message timed out. Try again."), true);
 assert.equal(classifyTransientError("A network error occurred"), true);
 assert.equal(classifyTransientError("Something went wrong while generating a response"), true);
