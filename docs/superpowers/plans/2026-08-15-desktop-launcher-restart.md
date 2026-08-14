@@ -4,7 +4,7 @@
 
 **Goal:** Add a desktop launch shortcut and a one-click tray restart action without changing browser/mobile/recovery protocols.
 
-**Architecture:** Add one PowerShell shortcut helper consumed by the release installer, and one small C# restart launcher consumed by `TrayApplicationContext`. Keep shortcut creation user-scoped and canonical-install-only; keep process restart inside the existing orderly shutdown path.
+**Architecture:** Add one PowerShell shortcut helper consumed by the release installer, plus small C# restart-launch/startup helpers consumed by `TrayApplicationContext` and `Program`. Keep shortcut creation user-scoped and canonical-install-only. Restart launches the same executable with `--restart-after <old PID>`; the replacement waits before acquiring the existing single-instance mutex so the handoff cannot collapse into both instances exiting.
 
 **Tech Stack:** PowerShell 5.1-compatible installer scripts, .NET 8 WinForms, GitHub Actions `windows-latest`.
 
@@ -13,7 +13,8 @@
 - Do not modify browser-extension behavior, EventBridge protocol, RecoveryRunner, ActivityStatus, ntfy settings, or Codex hook semantics.
 - Automatic desktop shortcut creation applies only to `%LOCALAPPDATA%\CodexUsageTray`.
 - A shortcut creation failure must not roll back an otherwise valid install/update.
-- Restart must dispose existing backends before launching the replacement executable.
+- Restart must dispose existing backends before the old instance exits and must preserve the existing `Local\CodexUsageTray` single-instance guarantee.
+- The replacement wait is bounded to 15 seconds and malformed restart PIDs fail closed.
 - Use TDD: prove each new contract fails on Windows CI before adding production code.
 
 ---
@@ -23,71 +24,67 @@
 **Files:**
 - Create: `tests/DesktopShortcut.Tests.ps1`
 - Modify: `.github/workflows/ci.yml`
-- Create later after RED: `scripts/shortcut-registration.ps1`
+- Create after RED: `scripts/shortcut-registration.ps1`
 
 **Interfaces:**
 - Produces: `New-CodexUsageTrayShortcut -ExecutablePath <path> -ShortcutDirectory <dir>` returning the `.lnk` path.
 
-- [ ] **Step 1: Write the failing Windows test** that dot-sources `scripts/shortcut-registration.ps1 -LibraryOnly`, creates a temporary fake `CodexUsageTray.exe`, calls `New-CodexUsageTrayShortcut`, reopens the `.lnk` with `WScript.Shell`, and asserts `TargetPath`, `WorkingDirectory`, and `IconLocation` reference the requested executable.
-- [ ] **Step 2: Wire `tests/DesktopShortcut.Tests.ps1` into PR CI** before production code exists.
-- [ ] **Step 3: Run PR CI and record RED** caused by missing `scripts/shortcut-registration.ps1`.
-- [ ] **Step 4: Add minimal helper implementation** with PowerShell 5.1 syntax and `-LibraryOnly` so importing the helper has no side effects.
-- [ ] **Step 5: Re-run CI and require the desktop-shortcut test to pass.**
+- [x] Write the failing Windows shortcut test.
+- [x] Wire the test into PR CI and record RED for the missing helper.
+- [x] Add the minimal PowerShell 5.1 helper with `-LibraryOnly`.
+- [x] Verify target, working directory, and icon on Windows CI.
 
 ### Task 2: Installer integration
 
 **Files:**
 - Modify: `scripts/install-release.ps1`
 - Modify: `.github/workflows/release.yml`
-- Modify: `README.md`
 
-**Interfaces:**
-- Consumes: `New-CodexUsageTrayShortcut` from Task 1.
-
-- [ ] **Step 1: Extend the shortcut test with a static installer contract** requiring `install-release.ps1` to include `shortcut-registration.ps1` in installed files and invoke the helper only for the canonical `%LOCALAPPDATA%\CodexUsageTray` path.
-- [ ] **Step 2: Run CI and record RED** before installer wiring exists.
-- [ ] **Step 3: Update installer** to copy the helper, commit installation first, then best-effort create/update `Codex Usage Tray.lnk` only for the canonical install path; emit warning on shortcut failure without rollback.
-- [ ] **Step 4: Update release packaging/smoke checks** so `shortcut-registration.ps1` is included in the ZIP and installed directory.
-- [ ] **Step 5: Update README** to document the desktop launch shortcut and no-PowerShell normal use after installation.
-- [ ] **Step 6: Re-run CI and require installer/release wiring tests to pass.**
+- [x] Add a failing installer contract for canonical, best-effort shortcut wiring.
+- [x] Preserve older/manual package compatibility by treating the helper as optional to the generic installer while requiring it in the new release package.
+- [x] Create/refresh the desktop shortcut only after a successful canonical install transaction.
+- [x] Package and smoke-check `shortcut-registration.ps1` in release wiring.
 
 ### Task 3: Restart launcher contract
 
 **Files:**
 - Modify: `tests/CodexUsageTray.Windows.Tests/Program.cs`
-- Create later after RED: `src/CodexUsageTray/ApplicationRestartLauncher.cs`
+- Create: `src/CodexUsageTray/ApplicationRestartLauncher.cs`
+- Create after adversarial RED: `src/CodexUsageTray/ApplicationRestartStartup.cs`
+- Modify: `src/CodexUsageTray/Program.cs`
 
 **Interfaces:**
-- Produces: `ApplicationRestartLauncher.TryStart(string executablePath)` and an injectable constructor overload for tests.
+- `ApplicationRestartLauncher.TryStart(string executablePath, int currentProcessId)`
+- `ApplicationRestartStartup.WaitForPreviousInstance(string[] args)`
 
-- [ ] **Step 1: Add Windows regression tests** proving the launcher passes the exact executable path to the process-start delegate and returns `false` when the delegate throws.
-- [ ] **Step 2: Run CI and record RED** because `ApplicationRestartLauncher` does not yet exist.
-- [ ] **Step 3: Add minimal launcher implementation** using `Process.Start` with `UseShellExecute = true` in production and injected delegate in tests.
-- [ ] **Step 4: Re-run CI and require the new Windows regression tests to pass.**
+- [x] Add RED proving the launcher must use the exact executable path and safely contain process-start failures.
+- [x] Add the minimal launcher.
+- [x] During adversarial review, identify that launching before release of `Local\CodexUsageTray` makes the replacement exit immediately.
+- [x] Add a second RED requiring the current PID to be handed to the replacement and requiring replacement startup to wait before the mutex.
+- [x] Add `--restart-after <PID>` handoff with a bounded 15-second wait and fail-closed malformed PID handling.
+- [x] Preserve ordinary `--startup` behavior.
 
 ### Task 4: Tray restart action
 
 **Files:**
 - Modify: `src/CodexUsageTray/TrayApplicationContext.cs`
-- Modify: `README.md`
+- Modify: `tests/CodexUsageTray.Windows.Tests/Program.cs`
 
-**Interfaces:**
-- Consumes: `ApplicationRestartLauncher.TryStart` from Task 3.
-
-- [ ] **Step 1: Add `앱 다시 시작` to the existing tray menu** near other lifecycle actions.
-- [ ] **Step 2: Refactor shutdown minimally into a shared async exit path** accepting a restart flag: stop timers, cancel, await active refresh, dispose backends, then launch the current executable and exit the old message loop.
-- [ ] **Step 3: If replacement launch fails, show an actionable message instead of throwing.**
-- [ ] **Step 4: Run the complete PR CI**: browser validation, PowerShell installer/shortcut tests, core/recovery/RecoveryRunner, Windows UI regression tests, full solution build, EventBridge integration.
+- [x] Add `앱 다시 시작` to the existing tray menu.
+- [x] Share the existing orderly shutdown path: stop timers, cancel, await active refresh, dispose backends.
+- [x] Launch the replacement with the exact executable path and `Environment.ProcessId`.
+- [x] Keep repeated clicks blocked by the existing `_exiting` guard.
+- [ ] Require the final exact-head PR CI to pass browser validation, PowerShell installer/shortcut tests, core/recovery/RecoveryRunner, 12 Windows UI regression tests, full solution build, and EventBridge integration.
 
 ### Task 5: Release and post-merge verification
 
 **Files:**
 - Modify after feature merge: `.release-version`
-- Modify after feature merge: `browser-extension/manifest.json` only if release-version consistency requires it; do not change extension behavior.
+- Modify after feature merge: `browser-extension/manifest.json` only for release-version consistency; do not change extension behavior.
 
-- [ ] **Step 1: Review exact PR diff for scope leakage** and verify no unrelated open PR is modified.
-- [ ] **Step 2: Require all exact-head PR checks green and no unresolved review threads.**
-- [ ] **Step 3: Squash merge feature PR.**
-- [ ] **Step 4: Prepare the next patch release version and trigger the existing release workflow.**
-- [ ] **Step 5: Verify release workflow success, ZIP/checksum publication, and release target commit.**
-- [ ] **Step 6: User installs once with the existing online installer, then verifies desktop shortcut launch and tray `앱 다시 시작` without PowerShell.**
+- [ ] Review the exact PR diff for scope leakage and confirm current `main` has not moved underneath the branch.
+- [ ] Require all exact-head PR checks green and no unresolved review threads.
+- [ ] Squash merge feature PR.
+- [ ] Prepare the next patch release and trigger the existing release workflow.
+- [ ] Verify release workflow success, ZIP/checksum publication, and release target commit.
+- [ ] User installs once with the existing online installer, then verifies desktop shortcut launch and tray `앱 다시 시작` without PowerShell.
