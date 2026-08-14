@@ -4,10 +4,23 @@ param()
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $helperPath = Join-Path $repositoryRoot 'scripts/shortcut-registration.ps1'
+$installerPath = Join-Path $repositoryRoot 'scripts/install-release.ps1'
 
 if (-not (Test-Path -LiteralPath $helperPath -PathType Leaf)) {
     throw "Desktop shortcut helper is missing: $helperPath"
 }
+
+$installerText = [System.IO.File]::ReadAllText($installerPath)
+foreach ($requiredInstallerTerm in @(
+        "'shortcut-registration.ps1'",
+        'New-CodexUsageTrayShortcut',
+        "Join-Path `$env:LOCALAPPDATA 'CodexUsageTray'",
+        'Write-Warning')) {
+    if (-not $installerText.Contains($requiredInstallerTerm)) {
+        throw "Release installer is missing desktop shortcut wiring: $requiredInstallerTerm"
+    }
+}
+Write-Host 'PASS release installer includes canonical, best-effort desktop shortcut wiring'
 
 . $helperPath -LibraryOnly
 
