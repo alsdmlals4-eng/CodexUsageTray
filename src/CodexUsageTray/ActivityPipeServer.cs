@@ -7,9 +7,31 @@ namespace CodexUsageTray;
 internal sealed class ActivityPipeServer : IAsyncDisposable
 {
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly Func<CancellationToken, Task<ActivityEvent?>> _receiveNext;
+    private readonly Action<Exception> _recordUnexpectedFailure;
+    private readonly Func<CancellationToken, Task> _delayAfterFailure;
     private Task? _listenerTask;
 
     public event Action<ActivityEvent>? ActivityReceived;
+
+    public ActivityPipeServer()
+        : this(
+            ReceiveNextAsync,
+            exception => DiagnosticLog.Append(exception, "Activity pipe listener failure"),
+            DelayAfterFailureAsync)
+    {
+    }
+
+    internal ActivityPipeServer(
+        Func<CancellationToken, Task<ActivityEvent?>> receiveNext,
+        Action<Exception> recordUnexpectedFailure,
+        Func<CancellationToken, Task> delayAfterFailure)
+    {
+        _receiveNext = receiveNext ?? throw new ArgumentNullException(nameof(receiveNext));
+        _recordUnexpectedFailure = recordUnexpectedFailure ??
+            throw new ArgumentNullException(nameof(recordUnexpectedFailure));
+        _delayAfterFailure = delayAfterFailure ?? throw new ArgumentNullException(nameof(delayAfterFailure));
+    }
 
     public void Start()
     {
@@ -22,22 +44,10 @@ internal sealed class ActivityPipeServer : IAsyncDisposable
         {
             try
             {
-                await using var pipe = new NamedPipeServerStream(
-                    ActivityPipeNames.PipeName,
-                    PipeDirection.In,
-                    maxNumberOfServerInstances: 1,
-                    PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-                await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
-                using var reader = new StreamReader(pipe);
-                var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-                if (!string.IsNullOrWhiteSpace(line))
+                var activity = await _receiveNext(cancellationToken).ConfigureAwait(false);
+                if (activity is not null)
                 {
-                    var activity = JsonSerializer.Deserialize<ActivityEvent>(line);
-                    if (activity is not null)
-                    {
-                        ActivityReceived?.Invoke(activity);
-                    }
+                    ActivityReceived?.Invoke(activity);
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -46,13 +56,42 @@ internal sealed class ActivityPipeServer : IAsyncDisposable
             }
             catch (IOException)
             {
-                await DelayAfterFailureAsync(cancellationToken).ConfigureAwait(false);
+                await _delayAfterFailure(cancellationToken).ConfigureAwait(false);
             }
             catch (JsonException)
             {
-                await DelayAfterFailureAsync(cancellationToken).ConfigureAwait(false);
+                await _delayAfterFailure(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                try
+                {
+                    _recordUnexpectedFailure(exception);
+                }
+                catch
+                {
+                    // A diagnostic write failure must not stop notification delivery.
+                }
+
+                await _delayAfterFailure(cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    private static async Task<ActivityEvent?> ReceiveNextAsync(CancellationToken cancellationToken)
+    {
+        await using var pipe = new NamedPipeServerStream(
+            ActivityPipeNames.PipeName,
+            PipeDirection.In,
+            maxNumberOfServerInstances: 1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+        using var reader = new StreamReader(pipe);
+        var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+        return string.IsNullOrWhiteSpace(line)
+            ? null
+            : JsonSerializer.Deserialize<ActivityEvent>(line);
     }
 
     private static async Task DelayAfterFailureAsync(CancellationToken cancellationToken)
