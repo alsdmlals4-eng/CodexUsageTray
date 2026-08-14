@@ -102,6 +102,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
               throw "PowerShell installer tests failed with exit code $LASTEXITCODE."
           }
+          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+              -File .\tests\DesktopShortcut.Tests.ps1
+          if ($LASTEXITCODE -ne 0) {
+              throw "Desktop shortcut tests failed with exit code $LASTEXITCODE."
+          }
 
       - name: Test core and recovery logic
         shell: pwsh
@@ -188,7 +193,8 @@ jobs:
           foreach ($scriptPath in @(
                   '.\scripts\install-release.ps1',
                   '.\scripts\setup-integration.ps1',
-                  '.\scripts\remove-integration.ps1')) {
+                  '.\scripts\remove-integration.ps1',
+                  '.\scripts\shortcut-registration.ps1')) {
               Copy-Item -LiteralPath $scriptPath -Destination $packageDirectory
           }
           Copy-Item `
@@ -209,6 +215,7 @@ jobs:
                   'install-release.ps1',
                   'setup-integration.ps1',
                   'remove-integration.ps1',
+                  'shortcut-registration.ps1',
                   'browser-extension\manifest.json',
                   'browser-extension\background.js',
                   'browser-extension\completion-state.js',

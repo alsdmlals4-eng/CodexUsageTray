@@ -15,10 +15,14 @@ $requiredFiles = @(
     'remove-integration.ps1',
     'install-release.ps1'
 )
-$optionalFiles = @('CodexUsageTray.RecoveryRunner.exe')
+$optionalFiles = @(
+    'CodexUsageTray.RecoveryRunner.exe',
+    'shortcut-registration.ps1'
+)
 $requiredDirectories = @('browser-extension')
 $resolvedPackage = (Resolve-Path -LiteralPath $PackageDirectory).Path
 $resolvedInstall = [System.IO.Path]::GetFullPath($InstallDirectory)
+$canonicalInstall = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'CodexUsageTray'))
 $installParent = Split-Path -Parent $resolvedInstall
 $installName = Split-Path -Leaf $resolvedInstall
 $stageDirectory = Join-Path $installParent "$installName.update-$PID"
@@ -303,6 +307,20 @@ finally {
 
 if (-not $committed) {
     throw 'Codex Usage Tray 설치가 완료되지 않았습니다.'
+}
+
+if ([string]::Equals(
+        $resolvedInstall,
+        $canonicalInstall,
+        [System.StringComparison]::OrdinalIgnoreCase)) {
+    try {
+        . (Join-Path $resolvedInstall 'shortcut-registration.ps1') -LibraryOnly
+        $shortcutPath = New-CodexUsageTrayShortcut -ExecutablePath $installedExecutable
+        Write-Host "바탕화면 바로가기: $shortcutPath"
+    }
+    catch {
+        Write-Warning "앱 설치는 완료됐지만 바탕화면 바로가기를 만들지 못했습니다: $($_.Exception.Message)"
+    }
 }
 
 if (-not $DoNotLaunch) {
