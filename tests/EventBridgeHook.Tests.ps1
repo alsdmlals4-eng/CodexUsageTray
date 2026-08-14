@@ -53,6 +53,36 @@ function Invoke-InstalledHookCommand {
     }
 }
 
+function Invoke-InstalledHookCommandFromPowerShell {
+    param(
+        [Parameter(Mandatory = $true)][string]$Payload,
+        [Parameter(Mandatory = $true)][string]$CommandLine
+    )
+
+    $inputPath = [System.IO.Path]::GetTempFileName()
+    $outputPath = [System.IO.Path]::GetTempFileName()
+    $errorPath = [System.IO.Path]::GetTempFileName()
+    $harnessPath = [System.IO.Path]::ChangeExtension(
+        [System.IO.Path]::GetTempFileName(),
+        '.ps1')
+    try {
+        $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($inputPath, $Payload, $utf8WithoutBom)
+        [System.IO.File]::WriteAllText($harnessPath, $CommandLine, $utf8WithoutBom)
+        $command = "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$harnessPath`" < `"$inputPath`" > `"$outputPath`" 2> `"$errorPath`""
+        cmd.exe /D /S /C $command | Out-Null
+        $script:LastWrapperExitCode = $LASTEXITCODE
+        $script:LastWrapperError = [System.IO.File]::ReadAllText($errorPath)
+        return [System.BitConverter]::ToString([System.IO.File]::ReadAllBytes($outputPath))
+    }
+    finally {
+        Remove-Item -LiteralPath $inputPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $errorPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $harnessPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Get-InstalledHookCommand {
     param(
         [Parameter(Mandatory = $true)][object]$Hooks,
@@ -116,6 +146,22 @@ try {
         "installed prompt hook command exits successfully; stderr=<$script:LastWrapperError>"
     Assert-Equal '' $promptOutputHex 'UserPromptSubmit emits zero stdout bytes'
 
+    $powerShellPromptOutputHex = Invoke-InstalledHookCommandFromPowerShell `
+        -Payload $promptPayload `
+        -CommandLine $promptCommand
+    Assert-Equal 0 $script:LastWrapperExitCode `
+        "installed prompt hook command runs from Codex PowerShell; stderr=<$script:LastWrapperError>"
+    Assert-Equal '' $powerShellPromptOutputHex `
+        'UserPromptSubmit emits zero stdout bytes from Codex PowerShell'
+
+    $powerShellStopOutputHex = Invoke-InstalledHookCommandFromPowerShell `
+        -Payload $stopPayload `
+        -CommandLine $stopCommand
+    Assert-Equal 0 $script:LastWrapperExitCode `
+        "installed Stop hook command runs from Codex PowerShell; stderr=<$script:LastWrapperError>"
+    Assert-Equal '7B-22-63-6F-6E-74-69-6E-75-65-22-3A-74-72-75-65-7D' $powerShellStopOutputHex `
+        'Stop emits exact success JSON bytes from Codex PowerShell'
+
     $spoofedPermissionPayload = $stopPayload
     $permissionOutputHex = Invoke-InstalledHookCommand `
         -Payload $spoofedPermissionPayload `
@@ -137,4 +183,4 @@ finally {
     }
 }
 
-Write-Host '8 EventBridge Hook integration assertions passed'
+Write-Host '12 EventBridge Hook integration assertions passed'
