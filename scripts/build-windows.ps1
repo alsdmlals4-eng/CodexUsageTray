@@ -5,9 +5,12 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $powershellTests = Join-Path $projectRoot 'tests/PowerShellInstaller.Tests.ps1'
 $testProject = Join-Path $projectRoot 'tests/CodexUsageTray.Core.Tests/CodexUsageTray.Core.Tests.csproj'
+$recoveryTestProject = Join-Path $projectRoot 'tests/CodexUsageTray.Recovery.Tests/CodexUsageTray.Recovery.Tests.csproj'
+$runnerTestProject = Join-Path $projectRoot 'tests/CodexUsageTray.RecoveryRunner.Tests/CodexUsageTray.RecoveryRunner.Tests.csproj'
 $windowsTestProject = Join-Path $projectRoot 'tests/CodexUsageTray.Windows.Tests/CodexUsageTray.Windows.Tests.csproj'
 $appProject = Join-Path $projectRoot 'src/CodexUsageTray/CodexUsageTray.csproj'
 $bridgeProject = Join-Path $projectRoot 'src/CodexUsageTray.EventBridge/CodexUsageTray.EventBridge.csproj'
+$runnerProject = Join-Path $projectRoot 'src/CodexUsageTray.RecoveryRunner/CodexUsageTray.RecoveryRunner.csproj'
 $outputDirectory = Join-Path $projectRoot 'artifacts/win-x64'
 
 $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
@@ -20,25 +23,37 @@ if ($LASTEXITCODE -ne 0 -or [int]($sdkVersion.Split('.')[0]) -lt 8) {
     throw ".NET 8 이상 SDK가 필요합니다. 현재 버전: $sdkVersion"
 }
 
-Write-Host '[1/5] PowerShell 설치·호환성 테스트'
+Write-Host '[1/8] PowerShell 설치·호환성 테스트'
 & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $powershellTests
 if ($LASTEXITCODE -ne 0) {
     throw 'PowerShell 설치·호환성 테스트가 실패했습니다.'
 }
 
-Write-Host '[2/5] 핵심 로직 테스트'
+Write-Host '[2/8] 핵심 로직 테스트'
 & dotnet run --configuration Release --project $testProject
 if ($LASTEXITCODE -ne 0) {
     throw '테스트가 실패하여 Windows 실행 파일을 만들지 않았습니다.'
 }
 
-Write-Host '[3/5] Windows UI 회귀 테스트'
+Write-Host '[3/8] 복구 로직 테스트'
+& dotnet run --configuration Release --project $recoveryTestProject
+if ($LASTEXITCODE -ne 0) {
+    throw '복구 로직 테스트가 실패하여 Windows 실행 파일을 만들지 않았습니다.'
+}
+
+Write-Host '[4/8] RecoveryRunner 테스트'
+& dotnet run --configuration Release --project $runnerTestProject
+if ($LASTEXITCODE -ne 0) {
+    throw 'RecoveryRunner 테스트가 실패하여 Windows 실행 파일을 만들지 않았습니다.'
+}
+
+Write-Host '[5/8] Windows UI 회귀 테스트'
 & dotnet run --configuration Release --project $windowsTestProject
 if ($LASTEXITCODE -ne 0) {
     throw 'Windows UI 회귀 테스트가 실패하여 실행 파일을 만들지 않았습니다.'
 }
 
-Write-Host '[4/5] Windows 트레이 앱 게시'
+Write-Host '[6/8] Windows 트레이 앱 게시'
 & dotnet publish $appProject `
     --configuration Release `
     --runtime win-x64 `
@@ -50,7 +65,7 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Windows 실행 파일 게시에 실패했습니다.'
 }
 
-Write-Host '[5/5] Codex Hook 이벤트 브리지 게시'
+Write-Host '[7/8] Codex Hook 이벤트 브리지 게시'
 & dotnet publish $bridgeProject `
     --configuration Release `
     --runtime win-x64 `
@@ -62,14 +77,28 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Codex Hook 이벤트 브리지 게시에 실패했습니다.'
 }
 
-$executable = Join-Path $outputDirectory 'CodexUsageTray.exe'
-$bridgeExecutable = Join-Path $outputDirectory 'CodexUsageTray.EventBridge.exe'
-if (-not (Test-Path -LiteralPath $executable -PathType Leaf) -or
-    -not (Test-Path -LiteralPath $bridgeExecutable -PathType Leaf)) {
-    throw "게시 명령은 성공했지만 필요한 실행 파일 두 개가 모두 생성되지 않았습니다: $outputDirectory"
+Write-Host '[8/8] RecoveryRunner 게시'
+& dotnet publish $runnerProject `
+    --configuration Release `
+    --runtime win-x64 `
+    --self-contained true `
+    -p:PublishSingleFile=true `
+    -p:PublishTrimmed=false `
+    --output $outputDirectory
+if ($LASTEXITCODE -ne 0) {
+    throw 'RecoveryRunner 게시에 실패했습니다.'
 }
 
-Get-Item -LiteralPath $executable, $bridgeExecutable | ForEach-Object {
+$executable = Join-Path $outputDirectory 'CodexUsageTray.exe'
+$bridgeExecutable = Join-Path $outputDirectory 'CodexUsageTray.EventBridge.exe'
+$runnerExecutable = Join-Path $outputDirectory 'CodexUsageTray.RecoveryRunner.exe'
+if (-not (Test-Path -LiteralPath $executable -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $bridgeExecutable -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $runnerExecutable -PathType Leaf)) {
+    throw "게시 명령은 성공했지만 필요한 실행 파일 세 개가 모두 생성되지 않았습니다: $outputDirectory"
+}
+
+Get-Item -LiteralPath $executable, $bridgeExecutable, $runnerExecutable | ForEach-Object {
     $sizeInMegabytes = [math]::Round($_.Length / 1048576, 1)
     Write-Host "완료: $($_.FullName) ($sizeInMegabytes MB)"
 }
