@@ -20,7 +20,11 @@ internal sealed class ActivityPopupQueue : IDisposable
     public void Enqueue(ActivityEvent activity)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (activity.Status is not (ActivityStatus.ApprovalRequired or ActivityStatus.Completed))
+        if (activity.Status is not (
+            ActivityStatus.ApprovalRequired or
+            ActivityStatus.RecoveryRequired or
+            ActivityStatus.Recovered or
+            ActivityStatus.Completed))
         {
             return;
         }
