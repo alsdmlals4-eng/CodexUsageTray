@@ -8,9 +8,10 @@
   }
 })(globalThis, () => {
   const RETRY_DELAYS = [3000, 10000, 30000];
+  const DISCONNECTED_WAITING_MARKER = "연결이 끊어졌습니다. 전체 답변을 기다리는 중입니다";
   const TRANSIENT_ERROR_MARKERS = [
     "메시지 전송 시간이 초과되었습니다",
-    "연결이 끊어졌습니다. 전체 답변을 기다리는 중입니다",
+    DISCONNECTED_WAITING_MARKER,
     "message timed out",
     "network error",
     "something went wrong",
@@ -23,6 +24,10 @@
       .replace(/\s+/g, " ")
       .trim()
       .toLocaleLowerCase();
+  }
+
+  function isDisconnectedWaiting(text) {
+    return normalize(text).includes(DISCONNECTED_WAITING_MARKER);
   }
 
   function classifyTransientError(text) {
@@ -124,6 +129,7 @@
   return {
     RecoveryWatchdog,
     classifyTransientError,
-    getRetryDelay
+    getRetryDelay,
+    isDisconnectedWaiting
   };
 });
