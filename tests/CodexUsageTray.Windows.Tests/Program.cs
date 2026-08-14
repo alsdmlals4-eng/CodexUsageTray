@@ -17,9 +17,11 @@ internal static class Program
             PopupQueuePersistsUntilClickAndOpensEveryActivity();
             ActivityPipeListenerRecoversAfterUnexpectedFailure();
             BrowserActivatorSendsExactSourceIdentity();
+            RestartLauncherUsesExactExecutablePath();
+            RestartLauncherFailsClosedWhenProcessStartThrows();
             UsageFailureDoesNotAssumeTheNetworkIsBroken();
             DiagnosticLogRedactsCredentialShapedText();
-            Console.WriteLine("6 Windows UI regression tests passed");
+            Console.WriteLine("8 Windows UI regression tests passed");
             return 0;
         }
         catch (Exception exception)
@@ -151,6 +153,30 @@ internal static class Program
             "the emitted activation payload must be valid");
         Assert(command?.TabId == 117 && command.WindowId == 9,
             "the exact source browser tab and window identity must be preserved");
+    }
+
+    private static void RestartLauncherUsesExactExecutablePath()
+    {
+        string? observedPath = null;
+        var launcher = new ApplicationRestartLauncher(path =>
+        {
+            observedPath = path;
+            return true;
+        });
+        var expected = Path.GetFullPath(@"C:\Apps\CodexUsageTray\CodexUsageTray.exe");
+
+        Assert(launcher.TryStart(expected), "restart launcher must report successful process start");
+        Assert(string.Equals(observedPath, expected, StringComparison.OrdinalIgnoreCase),
+            "restart launcher must start the exact current executable path");
+    }
+
+    private static void RestartLauncherFailsClosedWhenProcessStartThrows()
+    {
+        var launcher = new ApplicationRestartLauncher(_ =>
+            throw new InvalidOperationException("simulated process start failure"));
+
+        Assert(!launcher.TryStart(@"C:\Apps\CodexUsageTray\CodexUsageTray.exe"),
+            "restart launcher must convert process start exceptions into a safe failure result");
     }
 
     private static void UsageFailureDoesNotAssumeTheNetworkIsBroken()
