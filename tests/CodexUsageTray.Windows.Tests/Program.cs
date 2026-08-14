@@ -17,12 +17,15 @@ internal static class Program
             PopupQueuePersistsUntilClickAndOpensEveryActivity();
             ActivityPipeListenerRecoversAfterUnexpectedFailure();
             BrowserActivatorSendsExactSourceIdentity();
-            RestartLauncherUsesExactExecutablePath();
+            RestartLauncherUsesExactExecutablePathAndPreviousPid();
             RestartLauncherFailsClosedWhenProcessStartThrows();
+            RestartStartupAllowsNormalStartup();
+            RestartStartupWaitsForPreviousInstance();
+            RestartStartupRejectsMalformedPid();
             TrayRestartMenuInvokesLauncher();
             UsageFailureDoesNotAssumeTheNetworkIsBroken();
             DiagnosticLogRedactsCredentialShapedText();
-            Console.WriteLine("9 Windows UI regression tests passed");
+            Console.WriteLine("12 Windows UI regression tests passed");
             return 0;
         }
         catch (Exception exception)
@@ -156,37 +159,89 @@ internal static class Program
             "the exact source browser tab and window identity must be preserved");
     }
 
-    private static void RestartLauncherUsesExactExecutablePath()
+    private static void RestartLauncherUsesExactExecutablePathAndPreviousPid()
     {
         string? observedPath = null;
-        var launcher = new ApplicationRestartLauncher(path =>
+        var observedPid = 0;
+        var launcher = new ApplicationRestartLauncher((path, processId) =>
         {
             observedPath = path;
+            observedPid = processId;
             return true;
         });
         var expected = Path.GetFullPath(@"C:\Apps\CodexUsageTray\CodexUsageTray.exe");
 
-        Assert(launcher.TryStart(expected), "restart launcher must report successful process start");
+        Assert(launcher.TryStart(expected, 4242), "restart launcher must report successful process start");
         Assert(string.Equals(observedPath, expected, StringComparison.OrdinalIgnoreCase),
             "restart launcher must start the exact current executable path");
+        Assert(observedPid == 4242,
+            "restart launcher must pass the previous process ID to the replacement instance");
     }
 
     private static void RestartLauncherFailsClosedWhenProcessStartThrows()
     {
-        var launcher = new ApplicationRestartLauncher(_ =>
+        var launcher = new ApplicationRestartLauncher((_, _) =>
             throw new InvalidOperationException("simulated process start failure"));
 
-        Assert(!launcher.TryStart(@"C:\Apps\CodexUsageTray\CodexUsageTray.exe"),
+        Assert(!launcher.TryStart(@"C:\Apps\CodexUsageTray\CodexUsageTray.exe", 4242),
             "restart launcher must convert process start exceptions into a safe failure result");
+    }
+
+    private static void RestartStartupAllowsNormalStartup()
+    {
+        var waitCalled = false;
+        var allowed = ApplicationRestartStartup.WaitForPreviousInstance(
+            new[] { "--startup" },
+            _ =>
+            {
+                waitCalled = true;
+                return false;
+            });
+
+        Assert(allowed, "normal startup arguments must not be blocked by restart coordination");
+        Assert(!waitCalled, "normal startup must not wait for an unrelated process");
+    }
+
+    private static void RestartStartupWaitsForPreviousInstance()
+    {
+        var observedPid = 0;
+        var allowed = ApplicationRestartStartup.WaitForPreviousInstance(
+            new[] { "--restart-after", "4242" },
+            processId =>
+            {
+                observedPid = processId;
+                return true;
+            });
+
+        Assert(allowed, "replacement startup must continue after the previous instance exits");
+        Assert(observedPid == 4242,
+            "replacement startup must wait for the exact previous process ID");
+    }
+
+    private static void RestartStartupRejectsMalformedPid()
+    {
+        var waitCalled = false;
+        var allowed = ApplicationRestartStartup.WaitForPreviousInstance(
+            new[] { "--restart-after", "not-a-pid" },
+            _ =>
+            {
+                waitCalled = true;
+                return true;
+            });
+
+        Assert(!allowed, "malformed restart process IDs must fail closed");
+        Assert(!waitCalled, "malformed restart process IDs must not reach process waiting logic");
     }
 
     private static void TrayRestartMenuInvokesLauncher()
     {
         string? observedPath = null;
+        var observedPid = 0;
         var started = new ManualResetEventSlim(false);
-        var launcher = new ApplicationRestartLauncher(path =>
+        var launcher = new ApplicationRestartLauncher((path, processId) =>
         {
             observedPath = path;
+            observedPid = processId;
             started.Set();
             return true;
         });
@@ -214,6 +269,8 @@ internal static class Program
             Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "CodexUsageTray.exe"));
         Assert(string.Equals(observedPath, expectedPath, StringComparison.OrdinalIgnoreCase),
             "tray restart must target the exact current executable path");
+        Assert(observedPid == Environment.ProcessId,
+            "tray restart must identify the current process for mutex-safe handoff");
     }
 
     private static void UsageFailureDoesNotAssumeTheNetworkIsBroken()
