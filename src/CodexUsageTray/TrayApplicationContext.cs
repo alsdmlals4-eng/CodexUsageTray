@@ -16,6 +16,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly UsageFlyoutForm _flyout = new();
     private readonly ActivityHistoryForm _activityForm = new();
     private readonly ActivityStore _activityStore = new();
+    private readonly BrowserRecoveryCoordinator _browserRecovery = new();
+    private readonly BrowserActivityActivator _browserActivator = new();
     private readonly ActivityPopupQueue _popupQueue;
     private readonly ActivityPipeServer _activityPipe;
     private readonly Control _dispatcher = new();
@@ -166,9 +168,46 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _activityStore.AddOrUpdate(activity);
         UpdateActivities();
-        if (activity.Status is ActivityStatus.ApprovalRequired or ActivityStatus.Completed)
+        if (activity.Status is ActivityStatus.ApprovalRequired or
+            ActivityStatus.RecoveryRequired or
+            ActivityStatus.Recovered or
+            ActivityStatus.Completed)
         {
             _popupQueue.Enqueue(activity);
+        }
+
+        var instruction = _browserRecovery.Plan(activity);
+        if (instruction is not null)
+        {
+            _ = RunBrowserRecoveryAsync(activity, instruction);
+        }
+    }
+
+    private async Task RunBrowserRecoveryAsync(
+        ActivityEvent activity,
+        BrowserRecoveryInstruction instruction)
+    {
+        try
+        {
+            await Task.Delay(instruction.Delay, _shutdown.Token);
+            if (_shutdown.IsCancellationRequested || _exiting)
+            {
+                return;
+            }
+
+            var sent = _browserActivator.TryReload(activity);
+            _browserRecovery.MarkAttemptCompleted(instruction.SessionId);
+            if (!sent)
+            {
+                var next = _browserRecovery.Plan(activity);
+                if (next is not null)
+                {
+                    await RunBrowserRecoveryAsync(activity, next);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+        {
         }
     }
 
@@ -184,9 +223,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         var activities = _activityStore.Snapshot();
         var approvals = activities.Count(item => item.Status == ActivityStatus.ApprovalRequired);
-        var running = activities.Count(item => item.Status == ActivityStatus.Running);
-        _activityItem.Text = approvals > 0
-            ? $"작업 알림 기록 (승인 {approvals} · 진행 {running})"
+        var recoveryRequired = activities.Count(item => item.Status == ActivityStatus.RecoveryRequired);
+        var running = activities.Count(item => item.Status is ActivityStatus.Running or ActivityStatus.Retrying);
+        _activityItem.Text = approvals > 0 || recoveryRequired > 0
+            ? $"작업 알림 기록 (승인 {approvals} · 복구 {recoveryRequired} · 진행 {running})"
             : $"작업 알림 기록 ({activities.Count})";
         _activityForm.UpdateActivities(activities);
     }
