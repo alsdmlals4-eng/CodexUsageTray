@@ -21,6 +21,7 @@
       "js": [
         "completion-state.js",
         "recovery-watchdog.js",
+        "recovery-dom.js",
         "runtime-messaging.js",
         "content.js"
       ],
