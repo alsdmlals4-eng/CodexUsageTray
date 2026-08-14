@@ -70,7 +70,7 @@ internal static class Program
             Assert(actual.ActivityKey == expected.ActivityKey,
                 "the activity after an unexpected listener failure must still be delivered");
             Assert(attempts >= 2,
-                "the listener must retry after an unexpected failure");
+                "the listener must continue receiving after an unexpected failure");
             Assert(failures.Count == 1 && failures[0] is InvalidOperationException,
                 "the unexpected listener failure must be recorded exactly once");
         }
