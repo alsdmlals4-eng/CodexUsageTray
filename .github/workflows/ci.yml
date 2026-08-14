@@ -65,6 +65,15 @@ jobs:
               throw "PowerShell installer tests failed with exit code $LASTEXITCODE."
           }
 
+      - name: Test desktop shortcut integration
+        shell: pwsh
+        run: |
+          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+              -File .\tests\DesktopShortcut.Tests.ps1
+          if ($LASTEXITCODE -ne 0) {
+              throw "Desktop shortcut tests failed with exit code $LASTEXITCODE."
+          }
+
       - name: Validate recovery release wiring
         shell: pwsh
         run: |
