@@ -32,6 +32,7 @@ jobs:
           node --check .\browser-extension\background.js
           node --check .\browser-extension\completion-state.js
           node --check .\browser-extension\recovery-watchdog.js
+          node --check .\browser-extension\recovery-dom.js
           node --check .\browser-extension\runtime-messaging.js
           node --check .\browser-extension\content.js
           node --check .\browser-extension\tab-focus.js
@@ -41,6 +42,7 @@ jobs:
           node .\tests\browser-extension\manifest.test.js
           node .\tests\browser-extension\tab-focus.test.js
           node .\tests\browser-extension\recovery-watchdog.test.js
+          node .\tests\browser-extension\recovery-dom.test.js
 
       - name: Test Windows PowerShell compatibility and installers
         shell: pwsh
