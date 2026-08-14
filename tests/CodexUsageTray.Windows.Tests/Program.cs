@@ -23,9 +23,10 @@ internal static class Program
             RestartStartupWaitsForPreviousInstance();
             RestartStartupRejectsMalformedPid();
             TrayRestartMenuInvokesLauncher();
+            TrayRecoverySelfTestUsesSafeActivityPath();
             UsageFailureDoesNotAssumeTheNetworkIsBroken();
             DiagnosticLogRedactsCredentialShapedText();
-            Console.WriteLine("12 Windows UI regression tests passed");
+            Console.WriteLine("13 Windows UI regression tests passed");
             return 0;
         }
         catch (Exception exception)
@@ -271,6 +272,61 @@ internal static class Program
             "tray restart must target the exact current executable path");
         Assert(observedPid == Environment.ProcessId,
             "tray restart must identify the current process for mutex-safe handoff");
+    }
+
+    private static void TrayRecoverySelfTestUsesSafeActivityPath()
+    {
+        var context = new TrayApplicationContext(new ApplicationRestartLauncher((_, _) => true));
+        var notifyIconField = typeof(TrayApplicationContext).GetField(
+            "_notifyIcon",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        var notifyIcon = notifyIconField?.GetValue(context) as NotifyIcon;
+        var selfTestItem = notifyIcon?.ContextMenuStrip?.Items
+            .Cast<ToolStripItem>()
+            .SingleOrDefault(item => string.Equals(item.Text, "복구 기능 테스트", StringComparison.Ordinal));
+
+        Assert(selfTestItem is not null, "tray context menu must expose the recovery self-test action");
+        selfTestItem!.PerformClick();
+        Application.DoEvents();
+
+        var popup = Application.OpenForms.OfType<ActivityPopupForm>().Single(form => form.Visible);
+        Assert(popup.Controls.OfType<Label>().Any(label => label.Text == "복구 필요"),
+            "recovery self-test must first exercise the normal RecoveryRequired popup");
+
+        var storeField = typeof(TrayApplicationContext).GetField(
+            "_activityStore",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        var store = storeField?.GetValue(context) as ActivityStore;
+        var requiredActivity = store?.Snapshot()
+            .SingleOrDefault(activity => activity.Detail == "recovery_self_test");
+
+        Assert(requiredActivity is not null, "recovery self-test activity must enter the normal activity store");
+        Assert(requiredActivity!.Status == ActivityStatus.RecoveryRequired,
+            "self-test activity must remain RecoveryRequired until the first test popup is acknowledged");
+        Assert(requiredActivity.SourceKind == ActivitySourceKind.ChatGptWeb,
+            "self-test must exercise the ChatGPT recovery presentation path");
+        Assert(requiredActivity.SourceUri is null &&
+               requiredActivity.BrowserConnectionId is null &&
+               requiredActivity.BrowserTabId == 0 &&
+               requiredActivity.BrowserWindowId == 0,
+            "self-test must not carry real browser navigation identity");
+        Assert(new BrowserRecoveryCoordinator().Plan(requiredActivity) is null,
+            "self-test UI activity must not be eligible for a real browser recovery reload");
+
+        FindClickSurface(popup).PerformClick();
+        Application.DoEvents();
+
+        var recoveredActivity = store?.Snapshot()
+            .SingleOrDefault(activity => activity.Detail == "recovery_self_test");
+        Assert(recoveredActivity is not null && recoveredActivity.Status == ActivityStatus.Recovered,
+            "acknowledging the required popup must transition the self-test activity to Recovered");
+        Assert(popup.Visible, "recovered self-test popup must follow the required popup");
+        Assert(popup.Controls.OfType<Label>().Any(label => label.Text == "자동 복구"),
+            "recovery self-test must exercise the normal Recovered popup");
+
+        FindClickSurface(popup).PerformClick();
+        Application.DoEvents();
+        Assert(!popup.Visible, "recovery self-test popup queue must drain after both test alerts are acknowledged");
     }
 
     private static void UsageFailureDoesNotAssumeTheNetworkIsBroken()
