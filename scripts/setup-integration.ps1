@@ -14,12 +14,11 @@ $extensionOrigin = 'chrome-extension://mgeacoaocoijccehjlolcedfbhbaifhl/'
 $installDirectory = Split-Path -Parent $resolvedBridge
 $nativeManifestPath = Join-Path $installDirectory 'chatgpt-native-host.json'
 $hookWrapperPath = Join-Path $installDirectory 'invoke-codex-hook.cmd'
-$command = "`"$hookWrapperPath`""
 
 $wrapperTemporaryPath = "$hookWrapperPath.tmp-$PID"
 $wrapperText = @(
     '@echo off',
-    '"%~dp0CodexUsageTray.EventBridge.exe" --hook >nul 2>nul',
+    '"%~dp0CodexUsageTray.EventBridge.exe" --hook "%~1" 2>nul',
     'exit /b 0',
     ''
 ) -join "`r`n"
@@ -98,6 +97,7 @@ function Set-UsageTrayHook {
     $property = $document.hooks.PSObject.Properties[$EventName]
     $existing = if ($property) { @($property.Value) } else { @() }
     $preserved = @(Remove-UsageTrayHandlers -Groups $existing)
+    $command = "`"$hookWrapperPath`" $EventName"
 
     $handler = [ordered]@{
         type = 'command'

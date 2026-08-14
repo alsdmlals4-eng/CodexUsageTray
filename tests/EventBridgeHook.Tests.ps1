@@ -31,18 +31,23 @@ function Assert-Equal {
 function Invoke-HookWrapper {
     param(
         [Parameter(Mandatory = $true)][string]$Payload,
-        [Parameter(Mandatory = $true)][string]$WrapperPath
+        [Parameter(Mandatory = $true)][string]$WrapperPath,
+        [Parameter(Mandatory = $true)][string]$EventName
     )
 
     $inputPath = [System.IO.Path]::GetTempFileName()
+    $outputPath = [System.IO.Path]::GetTempFileName()
     try {
         $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($inputPath, $Payload, $utf8WithoutBom)
-        $command = "call `"$WrapperPath`" < `"$inputPath`" 2>&1"
-        return cmd.exe /D /S /C $command
+        $command = "call `"$WrapperPath`" $EventName < `"$inputPath`" > `"$outputPath`""
+        cmd.exe /D /S /C $command | Out-Null
+        $script:LastWrapperExitCode = $LASTEXITCODE
+        return [System.BitConverter]::ToString([System.IO.File]::ReadAllBytes($outputPath))
     }
     finally {
         Remove-Item -LiteralPath $inputPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -65,18 +70,19 @@ try {
         last_assistant_message = 'Stop hook JSON integration test'
         permission_mode = 'default'
     } | ConvertTo-Json -Compress
-    $stopOutput = Invoke-HookWrapper -Payload $stopPayload -WrapperPath $wrapperPath
-    Assert-Equal 0 $LASTEXITCODE 'installed Stop hook wrapper exits successfully'
-    Assert-Equal $null $stopOutput 'installed Stop hook wrapper emits no parser-sensitive output'
+    $stopOutputHex = Invoke-HookWrapper -Payload $stopPayload -WrapperPath $wrapperPath -EventName 'Stop'
+    Assert-Equal 0 $script:LastWrapperExitCode 'installed Stop hook wrapper exits successfully'
+    Assert-Equal '7B-22-63-6F-6E-74-69-6E-75-65-22-3A-74-72-75-65-7D' $stopOutputHex `
+        'installed Stop hook wrapper emits exact JSON bytes without BOM or newline'
 
-    $directStopOutput = $stopPayload | & $installedBridge --hook
-    Assert-Equal 0 $LASTEXITCODE 'direct Stop bridge invocation exits successfully'
-    Assert-Equal $null $directStopOutput 'direct Stop bridge invocation emits no parser-sensitive output'
-
-    $invalidStopPayload = '{"hook_event_name":"Stop"}'
-    $invalidStopOutput = Invoke-HookWrapper -Payload $invalidStopPayload -WrapperPath $wrapperPath
-    Assert-Equal 0 $LASTEXITCODE 'notification parsing failure never fails the Stop hook'
-    Assert-Equal $null $invalidStopOutput 'failed notification delivery still emits no output'
+    $invalidStopPayload = 'not-json'
+    $invalidStopOutputHex = Invoke-HookWrapper `
+        -Payload $invalidStopPayload `
+        -WrapperPath $wrapperPath `
+        -EventName 'Stop'
+    Assert-Equal 0 $script:LastWrapperExitCode 'notification parsing failure never fails the Stop hook'
+    Assert-Equal '7B-22-63-6F-6E-74-69-6E-75-65-22-3A-74-72-75-65-7D' $invalidStopOutputHex `
+        'malformed Stop input still emits exact success JSON bytes'
 
     $promptPayload = [ordered]@{
         session_id = 'integration-prompt'
@@ -86,14 +92,21 @@ try {
         prompt = 'Prompt hook output isolation test'
         permission_mode = 'default'
     } | ConvertTo-Json -Compress
-    $promptOutput = Invoke-HookWrapper -Payload $promptPayload -WrapperPath $wrapperPath
-    Assert-Equal 0 $LASTEXITCODE 'installed prompt hook wrapper exits successfully'
-    Assert-Equal $null $promptOutput 'non-Stop hooks do not receive Stop-only JSON output'
+    $promptOutputHex = Invoke-HookWrapper `
+        -Payload $promptPayload `
+        -WrapperPath $wrapperPath `
+        -EventName 'UserPromptSubmit'
+    Assert-Equal 0 $script:LastWrapperExitCode 'installed prompt hook wrapper exits successfully'
+    Assert-Equal '' $promptOutputHex 'UserPromptSubmit emits zero stdout bytes'
 
-    Copy-Item -LiteralPath $env:ComSpec -Destination $installedBridge -Force
-    $noisyHelperOutput = Invoke-HookWrapper -Payload $stopPayload -WrapperPath $wrapperPath
-    Assert-Equal 0 $LASTEXITCODE 'hook wrapper isolates a noisy helper without failing Codex'
-    Assert-Equal $null $noisyHelperOutput 'hook wrapper suppresses helper stdout and stderr'
+    $spoofedPermissionPayload = $stopPayload
+    $permissionOutputHex = Invoke-HookWrapper `
+        -Payload $spoofedPermissionPayload `
+        -WrapperPath $wrapperPath `
+        -EventName 'PermissionRequest'
+    Assert-Equal 0 $script:LastWrapperExitCode 'installed permission hook wrapper exits successfully'
+    Assert-Equal '' $permissionOutputHex 'PermissionRequest emits zero stdout bytes even when input claims Stop'
+
 }
 finally {
     $env:CODEX_HOME = $previousCodexHome
@@ -107,4 +120,4 @@ finally {
     }
 }
 
-Write-Host '10 EventBridge Hook integration assertions passed'
+Write-Host '8 EventBridge Hook integration assertions passed'

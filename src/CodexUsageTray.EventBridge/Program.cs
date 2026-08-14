@@ -27,14 +27,16 @@ internal static class Program
             return await RunNativeMessagingAsync();
         }
 
-        if (args.Length != 1 || !string.Equals(args[0], "--hook", StringComparison.Ordinal))
+        if (args.Length != 2 || !string.Equals(args[0], "--hook", StringComparison.Ordinal))
         {
             return 0;
         }
 
+        var configuredEventName = args[1];
         var input = await Console.In.ReadToEndAsync();
         try
         {
+            EnsureConfiguredEventMatchesPayload(configuredEventName, input);
             var activity = ActivityEventParser.ParseHook(input, DateTimeOffset.Now);
             var terminal = TerminalContextResolver.Resolve();
             activity = activity.WithTerminal(terminal.ProcessId, terminal.WindowHandle, terminal.Title);
@@ -43,6 +45,10 @@ internal static class Program
         catch
         {
             // An alerting failure must never change the Codex operation or approval decision.
+        }
+        finally
+        {
+            Console.Out.Write(HookProtocolOutput.GetSuccessJson(configuredEventName));
         }
 
         return 0;
@@ -183,6 +189,18 @@ internal static class Program
         finally
         {
             outputGate.Release();
+        }
+    }
+
+    private static void EnsureConfiguredEventMatchesPayload(string configuredEventName, string input)
+    {
+        using var document = JsonDocument.Parse(input);
+        if (document.RootElement.ValueKind != JsonValueKind.Object ||
+            !document.RootElement.TryGetProperty("hook_event_name", out var property) ||
+            property.ValueKind != JsonValueKind.String ||
+            !string.Equals(property.GetString(), configuredEventName, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("Hook payload event does not match the configured event.");
         }
     }
 
