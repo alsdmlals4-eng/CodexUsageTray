@@ -55,10 +55,10 @@
 - [x] UI 저장/검증/test-send/runtime 테스트 추가.
 - [x] `docs/MOBILE_NOTIFICATIONS.md` 추가.
 - [x] 최신 recovery-aware 설계 문서 추가.
-- [ ] 최신 head의 Windows CI 전체 성공 확인.
-- [ ] 최종 diff 적대적 검토.
-- [ ] 구 draft PR #18 종료.
-- [ ] PR #19을 ready 상태로 전환.
+- [x] Windows CI 전체 성공 확인.
+- [x] 최종 diff 적대적 검토.
+- [x] 구 draft PR #18 종료.
+- [x] PR #19을 ready 상태로 전환.
 
 ## Required verification
 
@@ -83,3 +83,10 @@ CI에서 다음 현행 단계가 모두 성공해야 한다.
 - browser extension/Hook/RecoveryRunner 파일을 모바일 기능 때문에 변경하지 않았는가
 - ntfy 장애가 browser recovery 계획을 막을 예외 경로가 남아 있지 않은가
 - 업데이트가 외부 설정 경로를 삭제하지 않는가
+
+## Completion evidence
+
+- 기능 코드가 포함된 head `2cbab73c293caf1de5ceaf46611f6e08416fe1b7`의 Windows CI run `31833293444` 성공.
+- 문서/계획을 포함한 head `866f997345c1ecde0760d97d0f345b257d9522e9`의 Windows CI run `31833387340` 성공.
+- PR #19은 current `main` 기준 mergeable/ready 상태로 전환했고, superseded PR #18은 병합 없이 종료했다.
+- 실제 사용자 Windows 설치 및 compiled-app → 휴대폰 live smoke test는 merge/release 후 별도 runtime evidence로 남는다.
