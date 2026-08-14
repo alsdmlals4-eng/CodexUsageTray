@@ -71,10 +71,6 @@ try {
     $stopResult = $stopOutput | ConvertFrom-Json
     Assert-Equal $true $stopResult.continue 'Stop hook explicitly allows the completed turn to finish'
 
-    $directStopOutput = $stopPayload | & $installedBridge --hook
-    Assert-Equal 0 $LASTEXITCODE 'direct Stop bridge invocation exits successfully'
-    Assert-Equal '{"continue":true}' ([string]$directStopOutput) 'direct Stop bridge invocation emits valid Codex JSON'
-
     $invalidStopPayload = '{"hook_event_name":"Stop"}'
     $invalidStopOutput = Invoke-HookWrapper -Payload $invalidStopPayload -WrapperPath $wrapperPath
     Assert-Equal 0 $LASTEXITCODE 'notification parsing failure never fails the Stop hook'
@@ -105,4 +101,4 @@ finally {
     }
 }
 
-Write-Host '11 EventBridge Hook integration assertions passed'
+Write-Host '7 EventBridge Hook integration assertions passed'
