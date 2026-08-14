@@ -20,13 +20,21 @@ internal sealed class BrowserActivityActivator
         _sendCommand = sendCommand ?? throw new ArgumentNullException(nameof(sendCommand));
     }
 
-    public bool TryActivate(ActivityEvent activity)
+    public bool TryActivate(ActivityEvent activity) =>
+        TrySend(activity, BrowserActivationCommand.FromActivity);
+
+    public bool TryReload(ActivityEvent activity) =>
+        TrySend(activity, BrowserActivationCommand.ForReload);
+
+    private bool TrySend(
+        ActivityEvent activity,
+        Func<ActivityEvent, BrowserActivationCommand> createCommand)
     {
         try
         {
             var pipeName = ActivityPipeNames.GetBrowserCommandPipeName(
                 activity.BrowserConnectionId ?? string.Empty);
-            var command = BrowserActivationCommand.FromActivity(activity);
+            var command = createCommand(activity);
             return _sendCommand(pipeName, JsonSerializer.Serialize(command));
         }
         catch (ArgumentException)
