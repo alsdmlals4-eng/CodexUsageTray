@@ -150,6 +150,11 @@ codex login
 3. `%USERPROFILE%\.codex\hooks.json`에 `invoke-codex-hook.cmd`가 있고 `timeout`이 `15`인지 확인합니다.
 4. 트레이 앱 우클릭 → **작업 알림 기록**을 확인합니다.
 
+`v1.2.6`부터 트레이 프로세스가 살아 있는 상태에서 내부 작업 알림 수신기가 예기치
+않게 실패해도 수신기를 자동 복구하고, 실패 원인을 `diagnostics.log`에 기록합니다.
+Codex와 웹 ChatGPT 알림이 동시에 멈췄다면 최신 버전을 다시 설치한 뒤 두 경로를
+각각 한 번 테스트하세요.
+
 Codex에 `Stop hook (failed): hook returned invalid stop hook JSON output`이 표시되면
 `v1.2.3` 이하를 최신 버전으로 다시 설치하고 Codex를 완전히 재시작한 뒤 `/hooks`에서
 변경된 Hook을 다시 신뢰하세요. `v1.2.4`부터 알림 전용 Hook은 Codex 제어 출력을 전혀
