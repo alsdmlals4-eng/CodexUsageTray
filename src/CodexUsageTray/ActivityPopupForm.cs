@@ -88,11 +88,17 @@ internal sealed class ActivityPopupForm : Form
     public void ShowActivity(ActivityEvent activity)
     {
         _activity = activity;
-        var isApproval = activity.Status == ActivityStatus.ApprovalRequired;
-        _status.Text = isApproval ? "승인 요청" : "작업 완료";
-        _status.ForeColor = isApproval
-            ? Color.FromArgb(202, 138, 4)
-            : Color.FromArgb(39, 174, 96);
+        (_status.Text, _status.ForeColor) = activity.Status switch
+        {
+            ActivityStatus.ApprovalRequired =>
+                ("승인 요청", Color.FromArgb(202, 138, 4)),
+            ActivityStatus.RecoveryRequired =>
+                ("복구 필요", Color.FromArgb(211, 84, 0)),
+            ActivityStatus.Recovered =>
+                ("자동 복구", Color.FromArgb(39, 174, 96)),
+            _ =>
+                ("작업 완료", Color.FromArgb(39, 174, 96))
+        };
         _source.Text = BuildSource(activity);
         _summary.Text = activity.Summary;
 

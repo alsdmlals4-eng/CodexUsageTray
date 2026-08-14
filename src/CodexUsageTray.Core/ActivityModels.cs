@@ -4,6 +4,9 @@ public enum ActivityStatus
 {
     Running,
     ApprovalRequired,
+    Retrying,
+    RecoveryRequired,
+    Recovered,
     Completed
 }
 

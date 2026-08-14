@@ -9,9 +9,20 @@ const STOP_SELECTORS = [
 ];
 const APPROVE_WORDS = ["approve", "allow", "confirm", "승인", "허용", "확인"];
 const REJECT_WORDS = ["deny", "reject", "cancel", "거부", "취소"];
+const RECOVERY_OUTCOME_GRACE_MS = 5000;
 const seenApprovalContainers = new WeakSet();
 const completionState = new CodexUsageTrayCompletionState.CompletionState(2000);
+const recoveryWatchdog = new CodexUsageTrayRecoveryWatchdog.RecoveryWatchdog({
+  stallMilliseconds: 180000,
+  maxAttempts: 3
+});
+const recoveryController = new CodexUsageTrayRecoveryActionController.RecoveryActionController({
+  sendActivity: sendRecoveryActivity
+});
 let completionSequence = 0;
+let recoverySequence = 0;
+let recoveryObservationBlockedUntil = 0;
+let recoveryPendingRoute = null;
 let monitoringStopped = false;
 let monitoringIntervalId = null;
 
@@ -41,6 +52,10 @@ function getConversationUrl() {
   url.search = "";
   url.hash = "";
   return url.toString();
+}
+
+function getRouteKey() {
+  return getConversationUrl() || location.pathname;
 }
 
 function getSafeTitle() {
@@ -85,7 +100,7 @@ function findNewApprovalContainer() {
   return null;
 }
 
-function sendActivity(status, activityId) {
+function sendActivity(status, activityId, metadata = {}) {
   if (monitoringStopped) {
     return;
   }
@@ -95,18 +110,113 @@ function sendActivity(status, activityId) {
     return;
   }
 
+  const activity = {
+    status,
+    activityId,
+    url,
+    title: getSafeTitle()
+  };
+  if (typeof metadata.reason === "string" && metadata.reason) {
+    activity.reason = metadata.reason;
+  }
+  if (Number.isInteger(metadata.attempt) && metadata.attempt > 0) {
+    activity.attempt = metadata.attempt;
+  }
+
   CodexUsageTrayRuntimeMessaging.sendRuntimeMessage(
     globalThis.chrome?.runtime,
     {
       type: "codex-usage-tray-activity",
-      activity: {
-        status,
-        activityId,
-        url,
-        title: getSafeTitle()
-      }
+      activity
     },
     stopMonitoring);
+}
+
+function sendRecoveryActivity(activity) {
+  recoverySequence += 1;
+  sendActivity(
+    activity.status,
+    `recovery-${Date.now()}-${recoverySequence}`,
+    activity);
+}
+
+function findRecoveryState() {
+  const candidate = CodexUsageTrayRecoveryDom.findSafeRecoveryCandidate(
+    document,
+    CodexUsageTrayRecoveryWatchdog.classifyTransientError);
+  const surface = candidate?.surface ||
+    CodexUsageTrayRecoveryDom.findTransientErrorSurface(
+      document,
+      CodexUsageTrayRecoveryWatchdog.classifyTransientError);
+  return { candidate, surface };
+}
+
+function currentRecoveryCandidate() {
+  return {
+    routeKey: getRouteKey(),
+    candidate: CodexUsageTrayRecoveryDom.findSafeRecoveryCandidate(
+      document,
+      CodexUsageTrayRecoveryWatchdog.classifyTransientError)
+  };
+}
+
+function inspectRecovery({ now, generating, assistantMutated, routeKey }) {
+  if (recoveryPendingRoute && recoveryPendingRoute !== routeKey) {
+    recoveryPendingRoute = null;
+    recoveryObservationBlockedUntil = 0;
+  }
+
+  if (recoveryPendingRoute === routeKey && (generating || assistantMutated)) {
+    recoveryController.reportRecovered({
+      routeKey,
+      reason: "generation_resumed"
+    });
+    recoveryPendingRoute = null;
+    recoveryObservationBlockedUntil = 0;
+  }
+
+  const { candidate, surface } = findRecoveryState();
+  const transientError = Boolean(surface);
+  const retryEvaluationBlocked = transientError &&
+    Boolean(candidate) &&
+    now < recoveryObservationBlockedUntil;
+  if (retryEvaluationBlocked) {
+    return;
+  }
+
+  const result = recoveryWatchdog.observe({
+    now,
+    routeKey,
+    generating,
+    assistantMutated,
+    transientError,
+    hasSafeRetryControl: Boolean(candidate)
+  });
+
+  if (result.action === "retry") {
+    const accepted = recoveryController.requestRetry({
+      routeKey,
+      attempt: result.attempt,
+      delayMilliseconds: result.delayMilliseconds,
+      getCurrentCandidate: currentRecoveryCandidate
+    });
+    if (accepted) {
+      recoveryPendingRoute = routeKey;
+      recoveryObservationBlockedUntil = now +
+        result.delayMilliseconds +
+        RECOVERY_OUTCOME_GRACE_MS;
+    }
+    return;
+  }
+
+  if (result.action === "recovery_required") {
+    const disconnectedWaiting = CodexUsageTrayRecoveryWatchdog.isDisconnectedWaiting(
+      surface?.textContent || "");
+    recoveryController.reportRecoveryRequired({
+      routeKey,
+      reason: disconnectedWaiting ? "disconnected_waiting" : result.reason
+    });
+  }
 }
 
 function inspectPage(assistantMutated = false) {
@@ -114,19 +224,33 @@ function inspectPage(assistantMutated = false) {
     return;
   }
 
+  const now = Date.now();
+  const generating = isGenerating();
+  const routeKey = getRouteKey();
   const result = completionState.observe({
-    now: Date.now(),
-    generating: isGenerating(),
+    now,
+    generating,
     assistantMutated,
-    routeKey: getConversationUrl() || location.pathname
+    routeKey
   });
+
+  inspectRecovery({ now, generating, assistantMutated, routeKey });
+
   if (result.completed) {
+    if (recoveryPendingRoute === routeKey) {
+      recoveryController.reportRecovered({
+        routeKey,
+        reason: "completed_after_recovery"
+      });
+      recoveryPendingRoute = null;
+      recoveryObservationBlockedUntil = 0;
+    }
     completionSequence += 1;
-    sendActivity("completed", `complete-${Date.now()}-${completionSequence}`);
+    sendActivity("completed", `complete-${now}-${completionSequence}`);
   }
 
   if (findNewApprovalContainer()) {
-    sendActivity("approval_required", `approval-${Date.now()}`);
+    sendActivity("approval_required", `approval-${now}`);
   }
 }
 

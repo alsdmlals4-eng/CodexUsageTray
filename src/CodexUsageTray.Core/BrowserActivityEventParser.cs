@@ -5,6 +5,7 @@ namespace CodexUsageTray.Core;
 public static class BrowserActivityEventParser
 {
     private const int TitleLimit = 80;
+    private const int DetailLimit = 120;
 
     public static ActivityEvent Parse(string json, DateTimeOffset occurredAt)
     {
@@ -16,12 +17,16 @@ public static class BrowserActivityEventParser
         var sourceUri = ParseChatGptConversationUri(RequiredString(root, "url"));
         var conversationId = GetSourceId(sourceUri);
         var title = Limit(OptionalString(root, "title") ?? string.Empty, TitleLimit);
+        var reason = Limit(OptionalString(root, "reason") ?? string.Empty, DetailLimit);
         var tabId = OptionalPositiveInt32(root, "tabId");
         var windowId = OptionalPositiveInt32(root, "windowId");
         var status = statusName switch
         {
             "completed" => ActivityStatus.Completed,
             "approval_required" => ActivityStatus.ApprovalRequired,
+            "retrying" => ActivityStatus.Retrying,
+            "recovery_required" => ActivityStatus.RecoveryRequired,
+            "recovered" => ActivityStatus.Recovered,
             _ => throw new InvalidDataException($"지원하지 않는 ChatGPT 웹 상태입니다: {statusName}")
         };
 
@@ -32,16 +37,26 @@ public static class BrowserActivityEventParser
             "ChatGPT Web",
             string.IsNullOrWhiteSpace(title) ? Shorten(conversationId, 8) : title,
             status,
-            status == ActivityStatus.Completed
-                ? "ChatGPT 응답 생성이 끝났습니다."
-                : "ChatGPT에서 승인 또는 확인이 필요합니다.",
-            string.Empty,
+            BuildSummary(status, reason),
+            reason,
             occurredAt,
             SourceKind: ActivitySourceKind.ChatGptWeb,
             SourceUri: sourceUri.AbsoluteUri,
             BrowserTabId: tabId,
             BrowserWindowId: windowId);
     }
+
+    private static string BuildSummary(ActivityStatus status, string reason) => status switch
+    {
+        ActivityStatus.Completed => "ChatGPT 응답 생성이 끝났습니다.",
+        ActivityStatus.ApprovalRequired => "ChatGPT에서 승인 또는 확인이 필요합니다.",
+        ActivityStatus.Retrying => "ChatGPT 일시 오류를 자동 재시도 중입니다.",
+        ActivityStatus.RecoveryRequired when string.Equals(reason, "disconnected_waiting", StringComparison.Ordinal) =>
+            "ChatGPT 연결이 끊겨 응답 재연결이 필요합니다.",
+        ActivityStatus.RecoveryRequired => "ChatGPT 작업 복구가 필요합니다.",
+        ActivityStatus.Recovered => "ChatGPT 작업이 자동 복구되었습니다.",
+        _ => "ChatGPT 작업 상태가 변경되었습니다."
+    };
 
     private static Uri ParseChatGptConversationUri(string value)
     {

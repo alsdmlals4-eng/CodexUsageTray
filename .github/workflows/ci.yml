@@ -22,6 +22,14 @@ jobs:
       - name: Validate ChatGPT browser extension
         shell: pwsh
         run: |
+          function Invoke-NodeChecked {
+            param([string[]]$Arguments)
+            & node @Arguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "node $($Arguments -join ' ') failed with exit code $LASTEXITCODE."
+            }
+          }
+
           $manifest = Get-Content .\browser-extension\manifest.json -Raw | ConvertFrom-Json
           if ($manifest.manifest_version -ne 3 -or
               $manifest.permissions -notcontains 'nativeMessaging' -or
@@ -29,16 +37,24 @@ jobs:
               $manifest.host_permissions[0] -ne 'https://chatgpt.com/*') {
             throw 'Browser extension permissions or host scope are invalid.'
           }
-          node --check .\browser-extension\background.js
-          node --check .\browser-extension\completion-state.js
-          node --check .\browser-extension\runtime-messaging.js
-          node --check .\browser-extension\content.js
-          node --check .\browser-extension\tab-focus.js
-          node .\tests\browser-extension\completion-state.test.js
-          node .\tests\browser-extension\runtime-messaging.test.js
-          node .\tests\browser-extension\content-runtime.test.js
-          node .\tests\browser-extension\manifest.test.js
-          node .\tests\browser-extension\tab-focus.test.js
+
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\background.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\completion-state.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\recovery-watchdog.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\recovery-dom.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\recovery-action-controller.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\runtime-messaging.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\content.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\tab-focus.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\completion-state.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\runtime-messaging.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\content-runtime.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\manifest.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\tab-focus.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\recovery-watchdog.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\recovery-dom.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\recovery-action-controller.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\recovery-content-runtime.test.js')
 
       - name: Test Windows PowerShell compatibility and installers
         shell: pwsh
@@ -49,6 +65,33 @@ jobs:
               throw "PowerShell installer tests failed with exit code $LASTEXITCODE."
           }
 
+      - name: Validate recovery release wiring
+        shell: pwsh
+        run: |
+          $manifest = Get-Content .\browser-extension\manifest.json -Raw | ConvertFrom-Json
+          $releaseVersion = (Get-Content .\.release-version -Raw).Trim()
+          if ($manifest.version -ne '1.3.0' -or $releaseVersion -ne 'v1.3.0') {
+            throw "Recovery release versions are inconsistent: extension=$($manifest.version), release=$releaseVersion"
+          }
+
+          $releaseWorkflow = Get-Content .\.github\workflows\release.yml -Raw
+          $installer = Get-Content .\scripts\install-release.ps1 -Raw
+          $builder = Get-Content .\scripts\build-windows.ps1 -Raw
+          foreach ($term in @(
+              'CodexUsageTray.RecoveryRunner.exe',
+              'CodexUsageTray.RecoveryRunner.csproj',
+              'recovery-action-controller.js')) {
+            if (-not $releaseWorkflow.Contains($term)) {
+              throw "Release workflow is missing recovery artifact wiring: $term"
+            }
+          }
+          if (-not $installer.Contains("'CodexUsageTray.RecoveryRunner.exe'")) {
+            throw 'Installer is missing optional RecoveryRunner wiring.'
+          }
+          if (-not $builder.Contains('CodexUsageTray.RecoveryRunner.exe')) {
+            throw 'Windows builder is missing RecoveryRunner publication validation.'
+          }
+
       - name: Test core logic
         shell: pwsh
         run: |
@@ -56,6 +99,24 @@ jobs:
               --project .\tests\CodexUsageTray.Core.Tests\CodexUsageTray.Core.Tests.csproj
           if ($LASTEXITCODE -ne 0) {
               throw "Core tests failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Test recovery logic
+        shell: pwsh
+        run: |
+          dotnet run --configuration Release `
+              --project .\tests\CodexUsageTray.Recovery.Tests\CodexUsageTray.Recovery.Tests.csproj
+          if ($LASTEXITCODE -ne 0) {
+              throw "Recovery tests failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Test RecoveryRunner logic
+        shell: pwsh
+        run: |
+          dotnet run --configuration Release `
+              --project .\tests\CodexUsageTray.RecoveryRunner.Tests\CodexUsageTray.RecoveryRunner.Tests.csproj
+          if ($LASTEXITCODE -ne 0) {
+              throw "RecoveryRunner tests failed with exit code $LASTEXITCODE."
           }
 
       - name: Test Windows UI regressions

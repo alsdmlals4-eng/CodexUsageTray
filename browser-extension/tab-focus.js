@@ -41,5 +41,28 @@
     return { action: "create", url: normalizedTarget };
   }
 
-  return { createActivationPlan, normalizeChatGptUrl };
+  function createReloadPlan(tabs, targetUrl, preferredTabId) {
+    const normalizedTarget = normalizeChatGptUrl(targetUrl);
+    const preferred = tabs.find((tab) => tab.id === preferredTabId);
+    if (!preferred) {
+      return null;
+    }
+
+    try {
+      if (normalizeChatGptUrl(preferred.url) !== normalizedTarget) {
+        return null;
+      }
+    }
+    catch {
+      return null;
+    }
+
+    return { action: "reload", tabId: preferred.id };
+  }
+
+  return {
+    createActivationPlan,
+    createReloadPlan,
+    normalizeChatGptUrl
+  };
 });

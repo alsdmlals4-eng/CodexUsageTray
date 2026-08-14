@@ -8,7 +8,13 @@ public sealed record BrowserActivationCommand(
     int TabId,
     int WindowId)
 {
-    public static BrowserActivationCommand FromActivity(ActivityEvent activity)
+    public static BrowserActivationCommand FromActivity(ActivityEvent activity) =>
+        FromActivity(activity, "activate");
+
+    public static BrowserActivationCommand ForReload(ActivityEvent activity) =>
+        FromActivity(activity, "reload");
+
+    private static BrowserActivationCommand FromActivity(ActivityEvent activity, string action)
     {
         ArgumentNullException.ThrowIfNull(activity);
         if (activity.SourceKind != ActivitySourceKind.ChatGptWeb ||
@@ -30,7 +36,7 @@ public sealed record BrowserActivationCommand(
             Fragment = string.Empty
         }.Uri.AbsoluteUri;
         return new BrowserActivationCommand(
-            "activate",
+            action,
             safeUri,
             activity.BrowserTabId,
             activity.BrowserWindowId);
@@ -43,7 +49,7 @@ public sealed record BrowserActivationCommand(
         {
             var candidate = JsonSerializer.Deserialize<BrowserActivationCommand>(json);
             if (candidate is null ||
-                !string.Equals(candidate.Action, "activate", StringComparison.Ordinal) ||
+                candidate.Action is not ("activate" or "reload") ||
                 candidate.TabId <= 0 ||
                 candidate.WindowId <= 0 ||
                 !Uri.TryCreate(candidate.Url, UriKind.Absolute, out var uri) ||

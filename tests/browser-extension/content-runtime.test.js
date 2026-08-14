@@ -23,7 +23,36 @@ class CompletingState {
   }
 }
 
+class InactiveRecoveryWatchdog {
+  observe() {
+    return { action: "none" };
+  }
+}
+
+class NoopRecoveryController {
+  requestRetry() { return false; }
+  reportRecoveryRequired() { return false; }
+  reportRecovered() {}
+}
+
 class FakeElement {}
+
+function recoveryDependencies() {
+  return {
+    CodexUsageTrayRecoveryWatchdog: {
+      RecoveryWatchdog: InactiveRecoveryWatchdog,
+      classifyTransientError() { return false; },
+      isDisconnectedWaiting() { return false; }
+    },
+    CodexUsageTrayRecoveryDom: {
+      findSafeRecoveryCandidate() { return null; },
+      findTransientErrorSurface() { return null; }
+    },
+    CodexUsageTrayRecoveryActionController: {
+      RecoveryActionController: NoopRecoveryController
+    }
+  };
+}
 
 const context = {
   chrome: {},
@@ -42,6 +71,7 @@ const context = {
   MutationObserver: FakeMutationObserver,
   CodexUsageTrayCompletionState: { CompletionState: CompletingState },
   CodexUsageTrayRuntimeMessaging: runtimeMessaging,
+  ...recoveryDependencies(),
   setInterval() { return 17; },
   clearInterval(id) { clearedIntervals.push(id); },
   setTimeout(callback) { callback(); return 23; }
@@ -85,6 +115,7 @@ const healthyContext = {
   MutationObserver: FakeMutationObserver,
   CodexUsageTrayCompletionState: { CompletionState: CompletingState },
   CodexUsageTrayRuntimeMessaging: runtimeMessaging,
+  ...recoveryDependencies(),
   setInterval() { return 18; },
   clearInterval() {},
   setTimeout(callback) { callback(); return 24; }

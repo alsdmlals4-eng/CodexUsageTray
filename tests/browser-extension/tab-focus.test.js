@@ -1,7 +1,10 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { createActivationPlan } = require("../../browser-extension/tab-focus.js");
+const {
+  createActivationPlan,
+  createReloadPlan
+} = require("../../browser-extension/tab-focus.js");
 
 const target = "https://chatgpt.com/c/thread-1";
 const tabs = [
@@ -30,4 +33,21 @@ assert.throws(
   /ChatGPT/,
   "non-ChatGPT navigation targets must be rejected");
 
-console.log("4 tab-focus regression tests passed");
+assert.deepEqual(
+  createReloadPlan(tabs, target, 21),
+  { action: "reload", tabId: 21 },
+  "reconnect may reload only the exact original tab");
+assert.equal(
+  createReloadPlan(tabs, target, 999),
+  null,
+  "reconnect must not substitute another matching tab when the original tab is gone");
+assert.equal(
+  createReloadPlan(tabs, "https://chatgpt.com/c/other-thread", 21),
+  null,
+  "reconnect must not reload a tab that navigated to another conversation");
+assert.throws(
+  () => createReloadPlan(tabs, "https://example.com/c/thread-1", 17),
+  /ChatGPT/,
+  "reload targets must preserve the ChatGPT-only host boundary");
+
+console.log("8 tab-focus regression tests passed");

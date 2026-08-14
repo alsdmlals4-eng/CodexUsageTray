@@ -31,6 +31,11 @@ function connectNativeHost() {
           // The source may close between query and activation; a future click can retry.
         });
       }
+      else if (message?.action === "reload") {
+        reloadChatGptSource(message).catch(() => {
+          // Reconnect is best-effort; the tray keeps the bounded retry state.
+        });
+      }
     });
     port.onDisconnect.addListener(() => {
       void chrome.runtime.lastError;
@@ -64,6 +69,19 @@ async function activateChatGptSource(message) {
     await chrome.windows.update(plan.windowId, { state: "normal" });
   }
   await chrome.windows.update(plan.windowId, { focused: true });
+}
+
+async function reloadChatGptSource(message) {
+  const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
+  const plan = CodexUsageTrayTabFocus.createReloadPlan(
+    tabs,
+    message.url,
+    message.tabId);
+  if (!plan) {
+    return;
+  }
+
+  await chrome.tabs.reload(plan.tabId);
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
