@@ -55,10 +55,12 @@ internal sealed class ActivityHistoryForm : Form
         }
 
         _items.Controls.Clear();
-        var running = activities.Count(item => item.Status == ActivityStatus.Running);
+        var running = activities.Count(item => item.Status is ActivityStatus.Running or ActivityStatus.Retrying);
         var approvals = activities.Count(item => item.Status == ActivityStatus.ApprovalRequired);
+        var recoveryRequired = activities.Count(item => item.Status == ActivityStatus.RecoveryRequired);
+        var recovered = activities.Count(item => item.Status == ActivityStatus.Recovered);
         var completed = activities.Count(item => item.Status == ActivityStatus.Completed);
-        _counts.Text = $"진행 {running} · 승인 대기 {approvals} · 완료 {completed}";
+        _counts.Text = $"진행 {running} · 승인 {approvals} · 복구 필요 {recoveryRequired} · 자동 복구 {recovered} · 완료 {completed}";
 
         if (activities.Count == 0)
         {
@@ -169,6 +171,9 @@ internal sealed class ActivityHistoryForm : Form
     {
         ActivityStatus.Running => "진행 중",
         ActivityStatus.ApprovalRequired => "승인 필요",
+        ActivityStatus.Retrying => "재시도 중",
+        ActivityStatus.RecoveryRequired => "복구 필요",
+        ActivityStatus.Recovered => "자동 복구",
         ActivityStatus.Completed => "작업 완료",
         _ => "알림"
     };
@@ -177,6 +182,9 @@ internal sealed class ActivityHistoryForm : Form
     {
         ActivityStatus.Running => Color.FromArgb(47, 128, 237),
         ActivityStatus.ApprovalRequired => Color.FromArgb(202, 138, 4),
+        ActivityStatus.Retrying => Color.FromArgb(47, 128, 237),
+        ActivityStatus.RecoveryRequired => Color.FromArgb(211, 84, 0),
+        ActivityStatus.Recovered => Color.FromArgb(39, 174, 96),
         ActivityStatus.Completed => Color.FromArgb(39, 174, 96),
         _ => Color.FromArgb(90, 98, 108)
     };
