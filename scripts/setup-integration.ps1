@@ -19,34 +19,6 @@ $nativeManifestPath = Join-Path $installDirectory 'chatgpt-native-host.json'
 $hookWrapperPath = Join-Path $installDirectory 'invoke-codex-hook.ps1'
 $legacyHookWrapperPath = Join-Path $installDirectory 'invoke-codex-hook.cmd'
 
-$wrapperTemporaryPath = "$hookWrapperPath.tmp-$PID"
-$wrapperText = @(
-    'param(',
-    "    [ValidateSet('UserPromptSubmit', 'PermissionRequest', 'Stop')]",
-    '    [string]$EventName',
-    ')',
-    '$bridgePath = Join-Path $PSScriptRoot ''CodexUsageTray.EventBridge.exe''',
-    '$payload = [Console]::In.ReadToEnd()',
-    '$OutputEncoding = New-Object System.Text.UTF8Encoding($false)',
-    'try {',
-    '    $payload | & $bridgePath --hook $EventName 2>$null | Out-Null',
-    '}',
-    'catch {',
-    '    # Notifications must never change the Codex operation or approval decision.',
-    '}',
-    'if ($EventName -eq ''Stop'') {',
-    '    [Console]::Out.Write(''{"continue":true}'')',
-    '}',
-    'exit 0',
-    ''
-) -join "`r`n"
-[System.IO.File]::WriteAllText(
-    $wrapperTemporaryPath,
-    $wrapperText,
-    [System.Text.Encoding]::ASCII)
-Move-Item -LiteralPath $wrapperTemporaryPath -Destination $hookWrapperPath -Force
-Remove-Item -LiteralPath $legacyHookWrapperPath -Force -ErrorAction SilentlyContinue
-
 New-Item -ItemType Directory -Path $codexHome -Force | Out-Null
 
 if (Test-Path -LiteralPath $hooksPath) {
@@ -147,7 +119,37 @@ $temporaryPath = "$hooksPath.tmp-$PID"
 $json = $document | ConvertTo-Json -Depth 30
 $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($temporaryPath, $json, $utf8WithoutBom)
+
+$wrapperTemporaryPath = "$hookWrapperPath.tmp-$PID"
+$wrapperText = @(
+    'param(',
+    "    [ValidateSet('UserPromptSubmit', 'PermissionRequest', 'Stop')]",
+    '    [string]$EventName',
+    ')',
+    '$bridgePath = Join-Path $PSScriptRoot ''CodexUsageTray.EventBridge.exe''',
+    '$utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)',
+    '[Console]::InputEncoding = $utf8WithoutBom',
+    '$OutputEncoding = $utf8WithoutBom',
+    '$payload = [Console]::In.ReadToEnd()',
+    'try {',
+    '    $payload | & $bridgePath --hook $EventName 2>$null | Out-Null',
+    '}',
+    'catch {',
+    '    # Notifications must never change the Codex operation or approval decision.',
+    '}',
+    'if ($EventName -eq ''Stop'') {',
+    '    [Console]::Out.Write(''{"continue":true}'')',
+    '}',
+    'exit 0',
+    ''
+) -join "`r`n"
+[System.IO.File]::WriteAllText(
+    $wrapperTemporaryPath,
+    $wrapperText,
+    [System.Text.Encoding]::ASCII)
+Move-Item -LiteralPath $wrapperTemporaryPath -Destination $hookWrapperPath -Force
 Move-Item -LiteralPath $temporaryPath -Destination $hooksPath -Force
+Remove-Item -LiteralPath $legacyHookWrapperPath -Force -ErrorAction SilentlyContinue
 
 Write-Host "Codex 작업 알림 Hook을 병합했습니다: $hooksPath"
 

@@ -11,6 +11,7 @@ $markers = @(
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $nativeHostName = 'com.alsdmlals4.codexusagetray'
 $installDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
+$hookCleanupSafe = $false
 
 function Remove-UsageTrayHandlers {
     param([object[]]$Groups)
@@ -52,6 +53,7 @@ function Remove-UsageTrayHandlers {
 try {
     if (-not (Test-Path -LiteralPath $hooksPath)) {
         Write-Host '제거할 Codex Usage Tray Hook이 없습니다.'
+        $hookCleanupSafe = $true
     }
     else {
         $backupPath = "$hooksPath.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
@@ -79,9 +81,11 @@ try {
             [System.IO.File]::WriteAllText($temporaryPath, $json, $utf8WithoutBom)
             Move-Item -LiteralPath $temporaryPath -Destination $hooksPath -Force
             Write-Host "Codex Usage Tray Hook을 제거했습니다. 백업: $backupPath"
+            $hookCleanupSafe = $true
         }
         else {
             Write-Host "제거할 Codex Usage Tray Hook이 없습니다. 백업: $backupPath"
+            $hookCleanupSafe = $true
         }
     }
 }
@@ -97,14 +101,16 @@ finally {
         -LiteralPath (Join-Path $installDirectory 'chatgpt-native-host.json') `
         -Force `
         -ErrorAction SilentlyContinue
-    Remove-Item `
-        -LiteralPath (Join-Path $installDirectory 'invoke-codex-hook.cmd') `
-        -Force `
-        -ErrorAction SilentlyContinue
-    Remove-Item `
-        -LiteralPath (Join-Path $installDirectory 'invoke-codex-hook.ps1') `
-        -Force `
-        -ErrorAction SilentlyContinue
+    if ($hookCleanupSafe) {
+        Remove-Item `
+            -LiteralPath (Join-Path $installDirectory 'invoke-codex-hook.cmd') `
+            -Force `
+            -ErrorAction SilentlyContinue
+        Remove-Item `
+            -LiteralPath (Join-Path $installDirectory 'invoke-codex-hook.ps1') `
+            -Force `
+            -ErrorAction SilentlyContinue
+    }
 }
 
 Write-Host 'Codex Usage Tray 자동 시작 항목과 ChatGPT 웹 연결을 제거했습니다.'

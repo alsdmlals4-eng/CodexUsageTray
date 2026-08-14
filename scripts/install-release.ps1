@@ -32,6 +32,11 @@ $replacementActivated = $false
 $committed = $false
 $startupValueChanged = $false
 $previousStartupValue = $null
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
+$hooksPath = Join-Path $codexHome 'hooks.json'
+$hooksBackupPath = Join-Path $installParent "$installName.hooks-backup-$PID.json"
+$hooksSnapshotTaken = $false
+$hooksPreviouslyExisted = $false
 
 function Get-InstalledProcesses {
     param(
@@ -200,6 +205,11 @@ try {
     $replacementActivated = $true
 
     if (-not $SkipCodexHooks) {
+        $hooksPreviouslyExisted = Test-Path -LiteralPath $hooksPath -PathType Leaf
+        if ($hooksPreviouslyExisted) {
+            Copy-Item -LiteralPath $hooksPath -Destination $hooksBackupPath -Force
+        }
+        $hooksSnapshotTaken = $true
         & (Join-Path $resolvedInstall 'setup-integration.ps1') `
             -BridgePath (Join-Path $resolvedInstall 'CodexUsageTray.EventBridge.exe')
     }
@@ -250,6 +260,16 @@ catch {
         }
     }
 
+    if ($hooksSnapshotTaken) {
+        if ($hooksPreviouslyExisted -and (Test-Path -LiteralPath $hooksBackupPath -PathType Leaf)) {
+            New-Item -ItemType Directory -Path $codexHome -Force | Out-Null
+            Copy-Item -LiteralPath $hooksBackupPath -Destination $hooksPath -Force
+        }
+        elseif (-not $hooksPreviouslyExisted) {
+            Remove-Item -LiteralPath $hooksPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     if ($replacementActivated -and (Test-Path -LiteralPath $resolvedInstall)) {
         Remove-InstallDirectory `
             -Path $resolvedInstall `
@@ -270,6 +290,7 @@ finally {
     if (Test-Path -LiteralPath $stageDirectory) {
         Remove-Item -LiteralPath $stageDirectory -Recurse -Force
     }
+    Remove-Item -LiteralPath $hooksBackupPath -Force -ErrorAction SilentlyContinue
 }
 
 if (-not $committed) {
