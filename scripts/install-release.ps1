@@ -15,6 +15,7 @@ $requiredFiles = @(
     'remove-integration.ps1',
     'install-release.ps1'
 )
+$optionalFiles = @('CodexUsageTray.RecoveryRunner.exe')
 $requiredDirectories = @('browser-extension')
 $resolvedPackage = (Resolve-Path -LiteralPath $PackageDirectory).Path
 $resolvedInstall = [System.IO.Path]::GetFullPath($InstallDirectory)
@@ -24,7 +25,8 @@ $stageDirectory = Join-Path $installParent "$installName.update-$PID"
 $backupDirectory = Join-Path $installParent "$installName.backup-$PID"
 $installedExecutable = Join-Path $resolvedInstall 'CodexUsageTray.exe'
 $installedBridge = Join-Path $resolvedInstall 'CodexUsageTray.EventBridge.exe'
-$installedProcessPaths = @($installedExecutable, $installedBridge)
+$installedRunner = Join-Path $resolvedInstall 'CodexUsageTray.RecoveryRunner.exe'
+$installedProcessPaths = @($installedExecutable, $installedBridge, $installedRunner)
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $runValueName = 'CodexUsageTray'
 $trayWasRunning = $false
@@ -157,6 +159,12 @@ foreach ($directoryName in $requiredDirectories) {
         throw "배포 패키지에 필요한 폴더가 없습니다: $directoryName"
     }
 }
+$filesToInstall = @($requiredFiles)
+foreach ($fileName in $optionalFiles) {
+    if (Test-Path -LiteralPath (Join-Path $resolvedPackage $fileName) -PathType Leaf) {
+        $filesToInstall += $fileName
+    }
+}
 
 New-Item -ItemType Directory -Path $installParent -Force | Out-Null
 foreach ($temporaryDirectory in @($stageDirectory, $backupDirectory)) {
@@ -167,7 +175,7 @@ foreach ($temporaryDirectory in @($stageDirectory, $backupDirectory)) {
 
 try {
     New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
-    foreach ($fileName in $requiredFiles) {
+    foreach ($fileName in $filesToInstall) {
         Copy-Item `
             -LiteralPath (Join-Path $resolvedPackage $fileName) `
             -Destination (Join-Path $stageDirectory $fileName) `
@@ -302,6 +310,9 @@ if (-not $DoNotLaunch) {
 }
 
 Write-Host "설치 완료: $installedExecutable"
+if (Test-Path -LiteralPath $installedRunner -PathType Leaf) {
+    Write-Host "선택 도구 설치: $installedRunner"
+}
 if (-not $SkipCodexHooks) {
     Write-Host 'Codex를 다시 시작한 뒤 /hooks에서 Codex Usage Tray Hook을 검토하고 신뢰하세요.'
     Write-Host '웹 ChatGPT 알림은 Chrome/Edge 확장 관리 화면에서 설치 폴더의 browser-extension을 로드하거나 기존 확장을 새로고침한 뒤, 열려 있던 모든 ChatGPT 탭도 새로고침하세요.'
