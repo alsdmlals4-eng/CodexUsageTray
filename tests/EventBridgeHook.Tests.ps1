@@ -163,32 +163,49 @@ try {
         prompt = $unicodeSummary
         permission_mode = 'default'
     } | ConvertTo-Json -Compress
-    $activityPipe = [System.IO.Pipes.NamedPipeServerStream]::new(
-        'CodexUsageTray.Activity.v1',
-        [System.IO.Pipes.PipeDirection]::In,
-        1,
-        [System.IO.Pipes.PipeTransmissionMode]::Byte,
-        [System.IO.Pipes.PipeOptions]::Asynchronous)
-    $reader = $null
+    $captureSource = @'
+using System;
+using System.IO;
+using System.Text;
+
+public static class HookInputCapture
+{
+    public static void Main()
+    {
+        var capturePath = Environment.GetEnvironmentVariable("CODEX_USAGE_TRAY_TEST_CAPTURE");
+        File.WriteAllText(capturePath, Console.In.ReadToEnd(), new UTF8Encoding(false));
+    }
+}
+'@
+    $captureBridge = Join-Path $testRoot 'HookInputCapture.exe'
+    Add-Type `
+        -TypeDefinition $captureSource `
+        -Language CSharp `
+        -OutputAssembly $captureBridge `
+        -OutputType ConsoleApplication
+    $capturePath = Join-Path $testRoot 'unicode-hook-input.json'
+    $realBridgeBackup = "$installedBridge.real"
+    Move-Item -LiteralPath $installedBridge -Destination $realBridgeBackup
+    Copy-Item -LiteralPath $captureBridge -Destination $installedBridge
+    $previousCapturePath = $env:CODEX_USAGE_TRAY_TEST_CAPTURE
     try {
-        $connectionTask = $activityPipe.WaitForConnectionAsync()
+        $env:CODEX_USAGE_TRAY_TEST_CAPTURE = $capturePath
         $unicodeOutputHex = Invoke-InstalledHookCommandFromPowerShell `
             -Payload $unicodePromptPayload `
             -CommandLine $promptCommand
         Assert-Equal 0 $script:LastWrapperExitCode `
             "Unicode prompt hook exits successfully; stderr=<$script:LastWrapperError>"
         Assert-Equal '' $unicodeOutputHex 'Unicode UserPromptSubmit emits zero stdout bytes'
-        Assert-Equal $true $connectionTask.Wait(5000) 'Unicode activity reaches the tray pipe'
-        $reader = [System.IO.StreamReader]::new(
-            $activityPipe,
-            (New-Object System.Text.UTF8Encoding($false)))
-        $receivedActivity = $reader.ReadLine() | ConvertFrom-Json
-        Assert-Equal $unicodeSummary $receivedActivity.summary `
+        Assert-Equal $true (Test-Path -LiteralPath $capturePath -PathType Leaf) `
+            'Unicode Hook input reaches the EventBridge process boundary'
+        $capturedPayload = Get-Content -LiteralPath $capturePath -Raw | ConvertFrom-Json
+        Assert-Equal $unicodeSummary $capturedPayload.prompt `
             'PowerShell wrapper preserves Korean and emoji Hook JSON'
     }
     finally {
-        if ($reader) { $reader.Dispose() }
-        $activityPipe.Dispose()
+        $env:CODEX_USAGE_TRAY_TEST_CAPTURE = $previousCapturePath
+        Remove-Item -LiteralPath $installedBridge -Force -ErrorAction SilentlyContinue
+        Move-Item -LiteralPath $realBridgeBackup -Destination $installedBridge -Force
     }
 
     $powerShellStopOutputHex = Invoke-InstalledHookCommandFromPowerShell `
