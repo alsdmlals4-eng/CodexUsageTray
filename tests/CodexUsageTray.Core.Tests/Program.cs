@@ -30,6 +30,7 @@ internal static class Program
             ("user prompt hook becomes running activity", TestPromptActivity),
             ("permission hook becomes approval activity", TestPermissionActivity),
             ("stop hook becomes completed activity", TestCompletedActivity),
+            ("Stop hook emits required success JSON", TestStopHookProtocolOutput),
             ("unknown hook input is rejected", TestUnknownActivity),
             ("activity store updates a turn and keeps newest first", TestActivityStore),
             ("activity event survives IPC JSON round trip", TestActivitySerialization),
@@ -58,6 +59,19 @@ internal static class Program
 
         Console.WriteLine($"{tests.Length - failures}/{tests.Length} tests passed");
         return failures == 0 ? 0 : 1;
+    }
+
+    private static Task TestStopHookProtocolOutput()
+    {
+        Equal("{\"continue\":true}", HookProtocolOutput.GetSuccessJson("Stop"),
+            "Stop must emit valid JSON so Codex can finish the turn");
+        Equal(string.Empty, HookProtocolOutput.GetSuccessJson("UserPromptSubmit"),
+            "UserPromptSubmit must not receive Stop-only output");
+        Equal(string.Empty, HookProtocolOutput.GetSuccessJson("PermissionRequest"),
+            "PermissionRequest must not receive Stop-only output");
+        Equal(string.Empty, HookProtocolOutput.GetSuccessJson(null),
+            "unknown input must not emit hook control output");
+        return Task.CompletedTask;
     }
 
     private static Task TestRemainingPercent()
