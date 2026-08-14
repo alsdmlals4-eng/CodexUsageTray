@@ -16,6 +16,8 @@ internal static class Program
             ("disconnected waiting schedules bounded reload attempts", TestDisconnectedReloadSchedule),
             ("duplicate disconnected signals do not double schedule", TestDuplicateDisconnectedSignal),
             ("recovered or completed activity resets reconnect state", TestRecoveryReset),
+            ("recovery self-test validates bounded policy", TestRecoverySelfTestPolicy),
+            ("recovery self-test fails closed when executor fails", TestRecoverySelfTestExecutorFailure),
             ("reload command preserves exact browser source identity", TestReloadCommand),
             ("recovery job validates bounded execution contract", TestRecoveryJobValidation),
             ("recovery state is saved and loaded atomically", TestRecoveryStateRoundTrip)
@@ -118,6 +120,39 @@ internal static class Program
         var afterCompleted = coordinator.Plan(required);
         NotNull(afterCompleted, "completion resets reconnect state");
         Equal(1, afterCompleted!.Attempt, "completion resets attempt count");
+    }
+
+    private static void TestRecoverySelfTestPolicy()
+    {
+        var executed = new List<BrowserRecoveryInstruction>();
+        var runner = new RecoverySelfTestRunner();
+        var result = runner.Run(instruction =>
+        {
+            executed.Add(instruction);
+            return true;
+        });
+
+        True(result.Passed, $"self-test must pass: {result.Failure}");
+        Equal(3, result.VerifiedDelays.Count, "verified delay count");
+        Equal(TimeSpan.FromSeconds(3), result.VerifiedDelays[0], "self-test first delay");
+        Equal(TimeSpan.FromSeconds(10), result.VerifiedDelays[1], "self-test second delay");
+        Equal(TimeSpan.FromSeconds(30), result.VerifiedDelays[2], "self-test third delay");
+        True(result.DuplicateSuppressed, "self-test must prove pending duplicate suppression");
+        True(result.CeilingEnforced, "self-test must prove the three-attempt ceiling");
+        True(result.ResetVerified, "self-test must prove recovered resets the coordinator");
+        Equal(3, executed.Count, "self-test executor must run exactly three bounded attempts");
+        Equal(1, executed[0].Attempt, "self-test executor attempt 1");
+        Equal(2, executed[1].Attempt, "self-test executor attempt 2");
+        Equal(3, executed[2].Attempt, "self-test executor attempt 3");
+    }
+
+    private static void TestRecoverySelfTestExecutorFailure()
+    {
+        var result = new RecoverySelfTestRunner().Run(_ => false);
+
+        True(!result.Passed, "executor failure must fail the recovery self-test");
+        True(!string.IsNullOrWhiteSpace(result.Failure),
+            "failed recovery self-test must return an actionable failure reason");
     }
 
     private static void TestReloadCommand()
