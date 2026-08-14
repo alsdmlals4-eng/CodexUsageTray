@@ -147,7 +147,7 @@ codex login
 
 1. Codex를 완전히 종료했다가 다시 실행합니다.
 2. `/hooks`를 열어 세 Hook이 `신뢰됨` 상태인지 확인합니다.
-3. `%USERPROFILE%\.codex\hooks.json`에 `invoke-codex-hook.cmd`가 있고 `timeout`이 `15`인지 확인합니다.
+3. `%USERPROFILE%\.codex\hooks.json`에 `invoke-codex-hook.ps1`가 있고 `timeout`이 `15`인지 확인합니다.
 4. 트레이 앱 우클릭 → **작업 알림 기록**을 확인합니다.
 
 `v1.2.6`부터 트레이 프로세스가 살아 있는 상태에서 내부 작업 알림 수신기가 예기치
@@ -161,6 +161,11 @@ Codex에 `Stop hook (failed): hook returned invalid stop hook JSON output`이 �
 `{"continue":true}` JSON을 정확히 반환하며, 알림 전달 실패가 Codex 턴 결과를
 변경하지 않습니다. 정상 상태에서는 짧은 작업이 끝날 때 `Stop hook (completed)`가
 표시되고 화면 상단에 완료 팝업이 나타납니다.
+
+Codex가 PowerShell 환경에서 실행될 때 `hook exited with code 1`이 표시된다면
+`v1.2.8` 이상을 설치하세요. 이전 Hook 명령은 PowerShell에서 따옴표로 감싼 `.cmd`
+경로를 실행하지 못했습니다. `v1.2.8`부터는 cmd와 PowerShell 양쪽에서 해석되는
+전용 PowerShell 진입점을 사용하고 Hook JSON의 UTF-8 문자도 보존합니다.
 
 웹 ChatGPT만 감지되지 않으면 확장 관리 화면에서 확장이 켜져 있는지 확인하고
 `chatgpt.com` 탭을 새로고침하세요. 확장 오류에 `Native host has exited`가 보이면

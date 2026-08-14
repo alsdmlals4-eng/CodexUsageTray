@@ -5,6 +5,7 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $installerPath = Join-Path $repositoryRoot 'scripts/install-release.ps1'
 $integrationSetupPath = Join-Path $repositoryRoot 'scripts/setup-integration.ps1'
+$removeIntegrationPath = Join-Path $repositoryRoot 'scripts/remove-integration.ps1'
 $onlineInstallerPath = Join-Path $repositoryRoot 'install-online.ps1'
 $releaseWorkflowPath = Join-Path $repositoryRoot '.github/workflows/release.yml'
 $testCount = 0
@@ -125,6 +126,7 @@ $lockingBridge = $null
 $protectedBridge = $null
 $rollbackBridge = $null
 $unexpectedTrayProcesses = @()
+$previousInstallerCodexHome = $env:CODEX_HOME
 
 try {
     New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
@@ -294,6 +296,12 @@ public static class ProcessLockHolder
     [System.IO.File]::WriteAllText(
         (Join-Path $packageDirectory 'setup-integration.ps1'),
         @'
+param([string]$BridgePath)
+$hooksPath = Join-Path $env:CODEX_HOME 'hooks.json'
+[System.IO.File]::WriteAllText(
+    $hooksPath,
+    '{"replacement":"broken"}',
+    [System.Text.Encoding]::ASCII)
 $startedBridge = Start-Process `
     -FilePath (Join-Path $PSScriptRoot 'CodexUsageTray.EventBridge.exe') `
     -PassThru
@@ -301,6 +309,16 @@ Start-Sleep -Milliseconds 300
 throw "forced integration failure after bridge start: $($startedBridge.Id)"
 '@,
         [System.Text.Encoding]::ASCII)
+
+    $rollbackCodexHome = Join-Path $testRoot 'rollback-codex-home'
+    New-Item -ItemType Directory -Path $rollbackCodexHome -Force | Out-Null
+    $rollbackHooksPath = Join-Path $rollbackCodexHome 'hooks.json'
+    $originalRollbackHooks = '{"hooks":{"Stop":[{"hooks":[{"commandWindows":"old-hook.cmd"}]}]}}'
+    [System.IO.File]::WriteAllText(
+        $rollbackHooksPath,
+        $originalRollbackHooks,
+        [System.Text.Encoding]::ASCII)
+    $env:CODEX_HOME = $rollbackCodexHome
 
     Assert-Throws {
         & $installerPath `
@@ -312,6 +330,9 @@ throw "forced integration failure after bridge start: $($startedBridge.Id)"
     Assert-Equal $restoredTrayHash (
         (Get-FileHash -LiteralPath $installedTray -Algorithm SHA256).Hash
     ) 'failed update restores the previous tray executable'
+    Assert-Equal $originalRollbackHooks (
+        [System.IO.File]::ReadAllText($rollbackHooksPath)
+    ) 'failed update restores the previous Codex hooks'
     Start-Sleep -Milliseconds 300
     $unexpectedTrayProcesses = @(Get-Process -Name 'CodexUsageTray' -ErrorAction SilentlyContinue | Where-Object {
         try {
@@ -327,6 +348,7 @@ throw "forced integration failure after bridge start: $($startedBridge.Id)"
     Assert-Equal 0 $unexpectedTrayProcesses.Count 'EventBridge-only rollback does not start the tray'
 }
 finally {
+    $env:CODEX_HOME = $previousInstallerCodexHome
     foreach ($testProcess in @($lockingBridge, $protectedBridge, $rollbackBridge) + @($unexpectedTrayProcesses)) {
         if ($null -ne $testProcess -and -not $testProcess.HasExited) {
             Stop-Process -Id $testProcess.Id -Force -ErrorAction SilentlyContinue
@@ -353,6 +375,22 @@ if ($env:OS -eq 'Windows_NT') {
             $integrationBridgePath,
             'bridge-fixture',
             [System.Text.Encoding]::ASCII)
+
+        $legacyWrapperPath = Join-Path $integrationInstallDirectory 'invoke-codex-hook.cmd'
+        [System.IO.File]::WriteAllText(
+            $legacyWrapperPath,
+            '@echo off',
+            [System.Text.Encoding]::ASCII)
+        [System.IO.File]::WriteAllText(
+            (Join-Path $integrationCodexHome 'hooks.json'),
+            '{broken-json',
+            [System.Text.Encoding]::ASCII)
+        $env:CODEX_HOME = $integrationCodexHome
+        Assert-Throws {
+            & $integrationSetupPath -BridgePath $integrationBridgePath
+        } 'malformed hooks abort integration setup'
+        Assert-True (Test-Path -LiteralPath $legacyWrapperPath -PathType Leaf) `
+            'failed setup preserves the wrapper referenced by existing hooks'
 
         $existingHooks = [ordered]@{
             hooks = [ordered]@{
@@ -383,18 +421,19 @@ if ($env:OS -eq 'Windows_NT') {
             $existingHooks,
             (New-Object System.Text.UTF8Encoding($false)))
 
-        $env:CODEX_HOME = $integrationCodexHome
         & $integrationSetupPath -BridgePath $integrationBridgePath
 
         $installedHooks = Get-Content -LiteralPath (Join-Path $integrationCodexHome 'hooks.json') -Raw | ConvertFrom-Json
         foreach ($eventName in @('UserPromptSubmit', 'PermissionRequest', 'Stop')) {
             $usageTrayHandlers = @($installedHooks.hooks.$eventName | ForEach-Object { $_.hooks } | Where-Object {
-                $_.commandWindows -match 'invoke-codex-hook\.cmd'
+                $_.commandWindows -match 'invoke-codex-hook\.ps1'
             })
             Assert-Equal 1 $usageTrayHandlers.Count "$eventName installs exactly one resilient hook wrapper"
             Assert-Equal 15 $usageTrayHandlers[0].timeout "$eventName allows bridge cold start time"
             Assert-True $usageTrayHandlers[0].commandWindows.EndsWith(" $eventName") `
                 "$eventName passes its trusted event name outside the Hook payload"
+            Assert-True $usageTrayHandlers[0].commandWindows.StartsWith('powershell.exe ') `
+                "$eventName uses a command line accepted by both PowerShell and cmd"
         }
 
         $preservedUserHandlers = @($installedHooks.hooks.Stop | ForEach-Object { $_.hooks } | Where-Object {
@@ -402,14 +441,26 @@ if ($env:OS -eq 'Windows_NT') {
         })
         Assert-Equal 1 $preservedUserHandlers.Count 'setup preserves unrelated user Stop hooks'
 
-        $wrapperPath = Join-Path $integrationInstallDirectory 'invoke-codex-hook.cmd'
+        $wrapperPath = Join-Path $integrationInstallDirectory 'invoke-codex-hook.ps1'
         Assert-True (Test-Path -LiteralPath $wrapperPath -PathType Leaf) 'setup creates the Codex hook wrapper'
         $wrapperBytes = [System.IO.File]::ReadAllBytes($wrapperPath)
         Assert-Equal 0 @($wrapperBytes | Where-Object { $_ -gt 0x7F }).Count 'Codex hook wrapper is ASCII'
         $wrapperText = [System.IO.File]::ReadAllText($wrapperPath)
-        Assert-True $wrapperText.Contains('%~dp0CodexUsageTray.EventBridge.exe') 'hook wrapper launches its installed event bridge'
-        Assert-True $wrapperText.Contains('--hook "%~1"') 'hook wrapper forwards the trusted configured event name'
-        Assert-True $wrapperText.Contains('exit /b 0') 'hook wrapper never reports notification delivery as a Codex failure'
+        Assert-True $wrapperText.Contains("Join-Path `$PSScriptRoot 'CodexUsageTray.EventBridge.exe'") 'hook wrapper launches its installed event bridge'
+        Assert-True $wrapperText.Contains('--hook $EventName') 'hook wrapper forwards the trusted configured event name'
+        Assert-True $wrapperText.Contains('StandardInput.BaseStream') 'hook wrapper preserves raw Hook JSON input bytes'
+        Assert-True $wrapperText.Contains('ReadToEndAsync()') 'hook wrapper drains child output without deadlock'
+        Assert-True $wrapperText.Contains('exit 0') 'hook wrapper never reports notification delivery as a Codex failure'
+
+        $installedRemovePath = Join-Path $integrationInstallDirectory 'remove-integration.ps1'
+        Copy-Item -LiteralPath $removeIntegrationPath -Destination $installedRemovePath
+        [System.IO.File]::WriteAllText(
+            (Join-Path $integrationCodexHome 'hooks.json'),
+            '{broken-json',
+            [System.Text.Encoding]::ASCII)
+        Assert-Throws { & $installedRemovePath } 'malformed hooks abort integration removal'
+        Assert-True (Test-Path -LiteralPath $wrapperPath -PathType Leaf) `
+            'failed removal preserves the wrapper referenced by existing hooks'
     }
     finally {
         $env:CODEX_HOME = $previousCodexHome

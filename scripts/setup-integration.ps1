@@ -8,25 +8,16 @@ $ErrorActionPreference = 'Stop'
 $resolvedBridge = (Resolve-Path -LiteralPath $BridgePath).Path
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
 $hooksPath = Join-Path $codexHome 'hooks.json'
-$markers = @('CodexUsageTray.EventBridge.exe', 'invoke-codex-hook.cmd')
+$markers = @(
+    'CodexUsageTray.EventBridge.exe',
+    'invoke-codex-hook.cmd',
+    'invoke-codex-hook.ps1')
 $nativeHostName = 'com.alsdmlals4.codexusagetray'
 $extensionOrigin = 'chrome-extension://mgeacoaocoijccehjlolcedfbhbaifhl/'
 $installDirectory = Split-Path -Parent $resolvedBridge
 $nativeManifestPath = Join-Path $installDirectory 'chatgpt-native-host.json'
-$hookWrapperPath = Join-Path $installDirectory 'invoke-codex-hook.cmd'
-
-$wrapperTemporaryPath = "$hookWrapperPath.tmp-$PID"
-$wrapperText = @(
-    '@echo off',
-    '"%~dp0CodexUsageTray.EventBridge.exe" --hook "%~1" 2>nul',
-    'exit /b 0',
-    ''
-) -join "`r`n"
-[System.IO.File]::WriteAllText(
-    $wrapperTemporaryPath,
-    $wrapperText,
-    [System.Text.Encoding]::ASCII)
-Move-Item -LiteralPath $wrapperTemporaryPath -Destination $hookWrapperPath -Force
+$hookWrapperPath = Join-Path $installDirectory 'invoke-codex-hook.ps1'
+$legacyHookWrapperPath = Join-Path $installDirectory 'invoke-codex-hook.cmd'
 
 New-Item -ItemType Directory -Path $codexHome -Force | Out-Null
 
@@ -97,7 +88,7 @@ function Set-UsageTrayHook {
     $property = $document.hooks.PSObject.Properties[$EventName]
     $existing = if ($property) { @($property.Value) } else { @() }
     $preserved = @(Remove-UsageTrayHandlers -Groups $existing)
-    $command = "`"$hookWrapperPath`" $EventName"
+    $command = "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$hookWrapperPath`" $EventName"
 
     $handler = [ordered]@{
         type = 'command'
@@ -128,7 +119,55 @@ $temporaryPath = "$hooksPath.tmp-$PID"
 $json = $document | ConvertTo-Json -Depth 30
 $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($temporaryPath, $json, $utf8WithoutBom)
+
+$wrapperTemporaryPath = "$hookWrapperPath.tmp-$PID"
+$wrapperText = @(
+    'param(',
+    "    [ValidateSet('UserPromptSubmit', 'PermissionRequest', 'Stop')]",
+    '    [string]$EventName',
+    ')',
+    '$bridgePath = Join-Path $PSScriptRoot ''CodexUsageTray.EventBridge.exe''',
+    '$startInfo = New-Object System.Diagnostics.ProcessStartInfo',
+    '$startInfo.FileName = $bridgePath',
+    '$startInfo.Arguments = "--hook $EventName"',
+    '$startInfo.UseShellExecute = $false',
+    '$startInfo.RedirectStandardInput = $true',
+    '$startInfo.RedirectStandardOutput = $true',
+    '$startInfo.RedirectStandardError = $true',
+    '$process = $null',
+    'try {',
+    '    $process = [System.Diagnostics.Process]::Start($startInfo)',
+    '    $stdoutTask = $process.StandardOutput.ReadToEndAsync()',
+    '    $stderrTask = $process.StandardError.ReadToEndAsync()',
+    '    [Console]::OpenStandardInput().CopyTo($process.StandardInput.BaseStream)',
+    '    $process.StandardInput.Close()',
+    '    $process.WaitForExit()',
+    '    $stdoutTask.GetAwaiter().GetResult() | Out-Null',
+    '    $stderrTask.GetAwaiter().GetResult() | Out-Null',
+    '}',
+    'catch {',
+    '    # Notifications must never change the Codex operation or approval decision.',
+    '}',
+    'finally {',
+    '    if ($null -ne $process) {',
+    '        try { $process.StandardInput.Close() } catch {}',
+    '        try { if (-not $process.HasExited) { $process.Kill() } } catch {}',
+    '        $process.Dispose()',
+    '    }',
+    '}',
+    'if ($EventName -eq ''Stop'') {',
+    '    [Console]::Out.Write(''{"continue":true}'')',
+    '}',
+    'exit 0',
+    ''
+) -join "`r`n"
+[System.IO.File]::WriteAllText(
+    $wrapperTemporaryPath,
+    $wrapperText,
+    [System.Text.Encoding]::ASCII)
+Move-Item -LiteralPath $wrapperTemporaryPath -Destination $hookWrapperPath -Force
 Move-Item -LiteralPath $temporaryPath -Destination $hooksPath -Force
+Remove-Item -LiteralPath $legacyHookWrapperPath -Force -ErrorAction SilentlyContinue
 
 Write-Host "Codex 작업 알림 Hook을 병합했습니다: $hooksPath"
 
