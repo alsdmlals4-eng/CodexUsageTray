@@ -173,6 +173,8 @@ public static class HookInputCapture
     public static void Main()
     {
         var capturePath = Environment.GetEnvironmentVariable("CODEX_USAGE_TRAY_TEST_CAPTURE");
+        Console.Out.Write(new string('O', 256 * 1024));
+        Console.Error.Write(new string('E', 256 * 1024));
         using (var input = Console.OpenStandardInput())
         using (var output = File.Create(capturePath))
         {
@@ -208,6 +210,14 @@ public static class HookInputCapture
         $capturedPayload = $capturedText | ConvertFrom-Json
         Assert-Equal $unicodeSummary $capturedPayload.prompt `
             'PowerShell wrapper preserves Korean and emoji Hook JSON'
+
+        $stressStopOutputHex = Invoke-InstalledHookCommandFromPowerShell `
+            -Payload $stopPayload `
+            -CommandLine $stopCommand
+        Assert-Equal 0 $script:LastWrapperExitCode `
+            'large child stdout and stderr never fail the Stop hook'
+        Assert-Equal '7B-22-63-6F-6E-74-69-6E-75-65-22-3A-74-72-75-65-7D' $stressStopOutputHex `
+            'large child stdout and stderr still emit exact Stop JSON'
     }
     finally {
         $env:CODEX_USAGE_TRAY_TEST_CAPTURE = $previousCapturePath
@@ -244,4 +254,4 @@ finally {
     }
 }
 
-Write-Host '16 EventBridge Hook integration assertions passed'
+Write-Host '18 EventBridge Hook integration assertions passed'

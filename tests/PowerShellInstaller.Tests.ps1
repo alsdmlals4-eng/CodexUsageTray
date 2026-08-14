@@ -449,6 +449,7 @@ if ($env:OS -eq 'Windows_NT') {
         Assert-True $wrapperText.Contains("Join-Path `$PSScriptRoot 'CodexUsageTray.EventBridge.exe'") 'hook wrapper launches its installed event bridge'
         Assert-True $wrapperText.Contains('--hook $EventName') 'hook wrapper forwards the trusted configured event name'
         Assert-True $wrapperText.Contains('StandardInput.BaseStream') 'hook wrapper preserves raw Hook JSON input bytes'
+        Assert-True $wrapperText.Contains('ReadToEndAsync()') 'hook wrapper drains child output without deadlock'
         Assert-True $wrapperText.Contains('exit 0') 'hook wrapper never reports notification delivery as a Codex failure'
 
         $installedRemovePath = Join-Path $integrationInstallDirectory 'remove-integration.ps1'
