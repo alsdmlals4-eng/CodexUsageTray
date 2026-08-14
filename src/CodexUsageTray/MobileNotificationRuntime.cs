@@ -36,7 +36,34 @@ internal sealed class MobileNotificationRuntime : IDisposable
             DiagnosticLog.AppendMobilePush);
     }
 
-    internal static MobileNotificationRuntime Shared => SharedRuntime.Value;
+    internal static void NotifyShared(ActivityEvent activity, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = SharedRuntime.Value.NotifyAsync(activity, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            SafeRecordFailure(exception);
+        }
+    }
+
+    internal static void ShowSharedSettingsDialog()
+    {
+        try
+        {
+            SharedRuntime.Value.ShowSettingsDialog();
+        }
+        catch (Exception exception)
+        {
+            SafeRecordFailure(exception);
+            MessageBox.Show(
+                "휴대폰 알림 설정을 열 수 없습니다. 진단 로그를 확인하세요.",
+                "휴대폰 알림 설정",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
 
     internal Task NotifyAsync(
         ActivityEvent activity,
@@ -68,5 +95,16 @@ internal sealed class MobileNotificationRuntime : IDisposable
 
         _disposed = true;
         _ownedClient?.Dispose();
+    }
+
+    private static void SafeRecordFailure(Exception exception)
+    {
+        try
+        {
+            DiagnosticLog.AppendMobilePush(exception);
+        }
+        catch
+        {
+        }
     }
 }
