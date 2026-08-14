@@ -18,6 +18,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ActivityStore _activityStore = new();
     private readonly BrowserRecoveryCoordinator _browserRecovery = new();
     private readonly BrowserActivityActivator _browserActivator = new();
+    private readonly ApplicationRestartLauncher _restartLauncher;
     private readonly ActivityPopupQueue _popupQueue;
     private readonly ActivityPipeServer _activityPipe;
     private readonly Control _dispatcher = new();
@@ -34,7 +35,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private bool _shutdownComplete;
 
     public TrayApplicationContext()
+        : this(new ApplicationRestartLauncher())
     {
+    }
+
+    internal TrayApplicationContext(ApplicationRestartLauncher restartLauncher)
+    {
+        _restartLauncher = restartLauncher ?? throw new ArgumentNullException(nameof(restartLauncher));
         _dispatcher.CreateControl();
         _popupQueue = new ActivityPopupQueue(OpenActivity);
         _activityPipe = new ActivityPipeServer();
@@ -60,6 +67,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _startupItem.Click += (_, _) => ToggleStartup();
         menu.Items.Add(_startupItem);
+        menu.Items.Add("앱 다시 시작", null, async (_, _) => await RestartAsync());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("종료", null, async (_, _) => await ShutdownAsync());
 
@@ -420,7 +428,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
             "Codex App Server 연결에 실패했습니다. 트레이 메뉴에서 진단 로그를 확인하세요.");
     }
 
-    private async Task ShutdownAsync()
+    private Task ShutdownAsync() => ShutdownApplicationAsync(restart: false);
+
+    private Task RestartAsync() => ShutdownApplicationAsync(restart: true);
+
+    private async Task ShutdownApplicationAsync(bool restart)
     {
         if (_exiting)
         {
@@ -439,6 +451,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             await DisposeBackendsAsync();
             _shutdownComplete = true;
+
+            if (restart)
+            {
+                var executablePath = Environment.ProcessPath ??
+                    Path.Combine(AppContext.BaseDirectory, "CodexUsageTray.exe");
+                if (!_restartLauncher.TryStart(executablePath))
+                {
+                    MessageBox.Show(
+                        $"Codex Usage Tray를 다시 시작하지 못했습니다.\n\n{executablePath}",
+                        "앱 다시 시작",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                }
+            }
+
             ExitThread();
         }
     }
