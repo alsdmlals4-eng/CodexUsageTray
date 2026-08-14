@@ -11,6 +11,7 @@ assert.deepEqual(manifest.content_scripts[0].js, [
   "completion-state.js",
   "recovery-watchdog.js",
   "recovery-dom.js",
+  "recovery-action-controller.js",
   "runtime-messaging.js",
   "content.js"
 ]);
