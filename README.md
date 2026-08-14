@@ -156,11 +156,11 @@ Codex와 웹 ChatGPT 알림이 동시에 멈췄다면 최신 버전을 다시 �
 각각 한 번 테스트하세요.
 
 Codex에 `Stop hook (failed): hook returned invalid stop hook JSON output`이 표시되면
-`v1.2.3` 이하를 최신 버전으로 다시 설치하고 Codex를 완전히 재시작한 뒤 `/hooks`에서
-변경된 Hook을 다시 신뢰하세요. `v1.2.4`부터 알림 전용 Hook은 Codex 제어 출력을 전혀
-내보내지 않으며 래퍼도 보조 프로그램의 stdout/stderr를 차단합니다. 정상 상태에서는
-짧은 작업이 끝날 때 `Stop hook (completed)`가 표시되고 화면 상단에 완료 팝업이
-나타납니다.
+`v1.2.6` 이하를 최신 버전으로 다시 설치하고 Codex를 완전히 재시작한 뒤 `/hooks`에서
+변경된 Hook을 다시 신뢰하세요. `v1.2.7`부터 Stop Hook은 Codex가 요구하는
+`{"continue":true}` JSON을 정확히 반환하며, 알림 전달 실패가 Codex 턴 결과를
+변경하지 않습니다. 정상 상태에서는 짧은 작업이 끝날 때 `Stop hook (completed)`가
+표시되고 화면 상단에 완료 팝업이 나타납니다.
 
 웹 ChatGPT만 감지되지 않으면 확장 관리 화면에서 확장이 켜져 있는지 확인하고
 `chatgpt.com` 탭을 새로고침하세요. 확장 오류에 `Native host has exited`가 보이면
