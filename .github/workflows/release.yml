@@ -33,6 +33,14 @@ jobs:
       - name: Validate ChatGPT browser extension
         shell: pwsh
         run: |
+          function Invoke-NodeChecked {
+            param([string[]]$Arguments)
+            & node @Arguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "node $($Arguments -join ' ') failed with exit code $LASTEXITCODE."
+            }
+          }
+
           $manifest = Get-Content .\browser-extension\manifest.json -Raw | ConvertFrom-Json
           if ($manifest.manifest_version -ne 3 -or
               $manifest.permissions -notcontains 'nativeMessaging' -or
@@ -40,16 +48,23 @@ jobs:
               $manifest.host_permissions[0] -ne 'https://chatgpt.com/*') {
             throw 'Browser extension permissions or host scope are invalid.'
           }
-          node --check .\browser-extension\background.js
-          node --check .\browser-extension\completion-state.js
-          node --check .\browser-extension\runtime-messaging.js
-          node --check .\browser-extension\content.js
-          node --check .\browser-extension\tab-focus.js
-          node .\tests\browser-extension\completion-state.test.js
-          node .\tests\browser-extension\runtime-messaging.test.js
-          node .\tests\browser-extension\content-runtime.test.js
-          node .\tests\browser-extension\manifest.test.js
-          node .\tests\browser-extension\tab-focus.test.js
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\background.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\completion-state.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\recovery-watchdog.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\recovery-dom.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\recovery-action-controller.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\runtime-messaging.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\content.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\tab-focus.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\completion-state.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\runtime-messaging.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\content-runtime.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\manifest.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\tab-focus.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\recovery-watchdog.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\recovery-dom.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\recovery-action-controller.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\recovery-content-runtime.test.js')
 
       - name: Resolve release version
         shell: pwsh
@@ -88,13 +103,17 @@ jobs:
               throw "PowerShell installer tests failed with exit code $LASTEXITCODE."
           }
 
-      - name: Test core logic
+      - name: Test core and recovery logic
         shell: pwsh
         run: |
-          dotnet run --configuration Release `
-              --project .\tests\CodexUsageTray.Core.Tests\CodexUsageTray.Core.Tests.csproj
-          if ($LASTEXITCODE -ne 0) {
-            throw "Core tests failed with exit code $LASTEXITCODE."
+          foreach ($project in @(
+              '.\tests\CodexUsageTray.Core.Tests\CodexUsageTray.Core.Tests.csproj',
+              '.\tests\CodexUsageTray.Recovery.Tests\CodexUsageTray.Recovery.Tests.csproj',
+              '.\tests\CodexUsageTray.RecoveryRunner.Tests\CodexUsageTray.RecoveryRunner.Tests.csproj')) {
+              dotnet run --configuration Release --project $project
+              if ($LASTEXITCODE -ne 0) {
+                  throw "Release test failed for $project with exit code $LASTEXITCODE."
+              }
           }
 
       - name: Test Windows UI regressions
@@ -131,6 +150,17 @@ jobs:
               throw "Event bridge publish failed with exit code $LASTEXITCODE."
           }
 
+          dotnet publish .\src\CodexUsageTray.RecoveryRunner\CodexUsageTray.RecoveryRunner.csproj `
+              --configuration Release `
+              --runtime win-x64 `
+              --self-contained true `
+              -p:PublishSingleFile=true `
+              -p:PublishTrimmed=false `
+              --output .\artifacts\publish\runner
+          if ($LASTEXITCODE -ne 0) {
+              throw "RecoveryRunner publish failed with exit code $LASTEXITCODE."
+          }
+
           powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
               -File .\tests\EventBridgeHook.Tests.ps1 `
               -BridgePath .\artifacts\publish\bridge\CodexUsageTray.EventBridge.exe
@@ -152,6 +182,9 @@ jobs:
           Copy-Item `
               -LiteralPath .\artifacts\publish\bridge\CodexUsageTray.EventBridge.exe `
               -Destination $packageDirectory
+          Copy-Item `
+              -LiteralPath .\artifacts\publish\runner\CodexUsageTray.RecoveryRunner.exe `
+              -Destination $packageDirectory
           foreach ($scriptPath in @(
                   '.\scripts\install-release.ps1',
                   '.\scripts\setup-integration.ps1',
@@ -172,12 +205,16 @@ jobs:
           foreach ($requiredFile in @(
                   'CodexUsageTray.exe',
                   'CodexUsageTray.EventBridge.exe',
+                  'CodexUsageTray.RecoveryRunner.exe',
                   'install-release.ps1',
                   'setup-integration.ps1',
                   'remove-integration.ps1',
                   'browser-extension\manifest.json',
                   'browser-extension\background.js',
                   'browser-extension\completion-state.js',
+                  'browser-extension\recovery-watchdog.js',
+                  'browser-extension\recovery-dom.js',
+                  'browser-extension\recovery-action-controller.js',
                   'browser-extension\runtime-messaging.js',
                   'browser-extension\content.js',
                   'browser-extension\tab-focus.js')) {
