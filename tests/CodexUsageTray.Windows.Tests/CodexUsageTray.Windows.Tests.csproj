@@ -10,6 +10,7 @@
     <AssemblyName>CodexUsageTray.Windows.Tests</AssemblyName>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
+    <StartupObject>CodexUsageTray.Windows.Tests.MobileNotificationTestProgram</StartupObject>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/CodexUsageTray/CodexUsageTray.csproj" />

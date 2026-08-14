@@ -50,6 +50,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Codex 로그인", null, (_, _) => OpenCodexLogin());
         menu.Items.Add("ChatGPT 알림 설정 안내", null, (_, _) => OpenChatGptNotificationGuide());
+        menu.Items.Add("휴대폰 알림 설정", null, (_, _) => MobileNotificationRuntime.ShowSharedSettingsDialog());
         menu.Items.Add("웹 ChatGPT 확장 폴더 열기", null, (_, _) => OpenBrowserExtensionFolder());
         menu.Items.Add("진단 로그 폴더 열기", null, (_, _) => OpenDiagnosticLogDirectory());
         _startupItem = new ToolStripMenuItem("Windows 시작 시 실행")
@@ -175,6 +176,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             _popupQueue.Enqueue(activity);
         }
+
+        MobileNotificationRuntime.NotifyShared(activity, _shutdown.Token);
 
         var instruction = _browserRecovery.Plan(activity);
         if (instruction is not null)
