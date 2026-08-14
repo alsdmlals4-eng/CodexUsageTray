@@ -33,7 +33,7 @@ internal static class Program
         }
 
         var configuredEventName = args[1];
-        var input = await Console.In.ReadToEndAsync();
+        var input = await ReadHookInputAsync();
         try
         {
             EnsureConfiguredEventMatchesPayload(configuredEventName, input);
@@ -52,6 +52,14 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    private static async Task<string> ReadHookInputAsync()
+    {
+        await using var input = Console.OpenStandardInput();
+        using var buffer = new MemoryStream();
+        await input.CopyToAsync(buffer);
+        return Encoding.UTF8.GetString(buffer.ToArray());
     }
 
     private static async Task<int> RunNativeMessagingAsync()

@@ -173,7 +173,11 @@ public static class HookInputCapture
     public static void Main()
     {
         var capturePath = Environment.GetEnvironmentVariable("CODEX_USAGE_TRAY_TEST_CAPTURE");
-        File.WriteAllText(capturePath, Console.In.ReadToEnd(), new UTF8Encoding(false));
+        using (var input = Console.OpenStandardInput())
+        using (var output = File.Create(capturePath))
+        {
+            input.CopyTo(output);
+        }
     }
 }
 '@
@@ -198,7 +202,10 @@ public static class HookInputCapture
         Assert-Equal '' $unicodeOutputHex 'Unicode UserPromptSubmit emits zero stdout bytes'
         Assert-Equal $true (Test-Path -LiteralPath $capturePath -PathType Leaf) `
             'Unicode Hook input reaches the EventBridge process boundary'
-        $capturedPayload = Get-Content -LiteralPath $capturePath -Raw | ConvertFrom-Json
+        $capturedText = [System.IO.File]::ReadAllText(
+            $capturePath,
+            (New-Object System.Text.UTF8Encoding($false)))
+        $capturedPayload = $capturedText | ConvertFrom-Json
         Assert-Equal $unicodeSummary $capturedPayload.prompt `
             'PowerShell wrapper preserves Korean and emoji Hook JSON'
     }
