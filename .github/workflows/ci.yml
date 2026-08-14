@@ -22,6 +22,14 @@ jobs:
       - name: Validate ChatGPT browser extension
         shell: pwsh
         run: |
+          function Invoke-NodeChecked {
+            param([string[]]$Arguments)
+            & node @Arguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "node $($Arguments -join ' ') failed with exit code $LASTEXITCODE."
+            }
+          }
+
           $manifest = Get-Content .\browser-extension\manifest.json -Raw | ConvertFrom-Json
           if ($manifest.manifest_version -ne 3 -or
               $manifest.permissions -notcontains 'nativeMessaging' -or
@@ -29,20 +37,21 @@ jobs:
               $manifest.host_permissions[0] -ne 'https://chatgpt.com/*') {
             throw 'Browser extension permissions or host scope are invalid.'
           }
-          node --check .\browser-extension\background.js
-          node --check .\browser-extension\completion-state.js
-          node --check .\browser-extension\recovery-watchdog.js
-          node --check .\browser-extension\recovery-dom.js
-          node --check .\browser-extension\runtime-messaging.js
-          node --check .\browser-extension\content.js
-          node --check .\browser-extension\tab-focus.js
-          node .\tests\browser-extension\completion-state.test.js
-          node .\tests\browser-extension\runtime-messaging.test.js
-          node .\tests\browser-extension\content-runtime.test.js
-          node .\tests\browser-extension\manifest.test.js
-          node .\tests\browser-extension\tab-focus.test.js
-          node .\tests\browser-extension\recovery-watchdog.test.js
-          node .\tests\browser-extension\recovery-dom.test.js
+
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\background.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\completion-state.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\recovery-watchdog.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\recovery-dom.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\runtime-messaging.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\content.js')
+          Invoke-NodeChecked -Arguments @('--check', '.\browser-extension\tab-focus.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\completion-state.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\runtime-messaging.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\content-runtime.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\manifest.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\tab-focus.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\recovery-watchdog.test.js')
+          Invoke-NodeChecked -Arguments @('.\tests\browser-extension\recovery-dom.test.js')
 
       - name: Test Windows PowerShell compatibility and installers
         shell: pwsh
