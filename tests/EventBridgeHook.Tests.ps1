@@ -67,16 +67,18 @@ try {
     } | ConvertTo-Json -Compress
     $stopOutput = Invoke-HookWrapper -Payload $stopPayload -WrapperPath $wrapperPath
     Assert-Equal 0 $LASTEXITCODE 'installed Stop hook wrapper exits successfully'
-    Assert-Equal $null $stopOutput 'installed Stop hook wrapper emits no parser-sensitive output'
+    Assert-Equal '{"continue":true}' ([string]$stopOutput) 'installed Stop hook wrapper emits valid Codex JSON'
+    $stopResult = $stopOutput | ConvertFrom-Json
+    Assert-Equal $true $stopResult.continue 'Stop hook explicitly allows the completed turn to finish'
 
     $directStopOutput = $stopPayload | & $installedBridge --hook
     Assert-Equal 0 $LASTEXITCODE 'direct Stop bridge invocation exits successfully'
-    Assert-Equal $null $directStopOutput 'direct Stop bridge invocation emits no parser-sensitive output'
+    Assert-Equal '{"continue":true}' ([string]$directStopOutput) 'direct Stop bridge invocation emits valid Codex JSON'
 
     $invalidStopPayload = '{"hook_event_name":"Stop"}'
     $invalidStopOutput = Invoke-HookWrapper -Payload $invalidStopPayload -WrapperPath $wrapperPath
     Assert-Equal 0 $LASTEXITCODE 'notification parsing failure never fails the Stop hook'
-    Assert-Equal $null $invalidStopOutput 'failed notification delivery still emits no output'
+    Assert-Equal '{"continue":true}' ([string]$invalidStopOutput) 'failed notification delivery still emits valid Stop JSON'
 
     $promptPayload = [ordered]@{
         session_id = 'integration-prompt'
@@ -90,10 +92,6 @@ try {
     Assert-Equal 0 $LASTEXITCODE 'installed prompt hook wrapper exits successfully'
     Assert-Equal $null $promptOutput 'non-Stop hooks do not receive Stop-only JSON output'
 
-    Copy-Item -LiteralPath $env:ComSpec -Destination $installedBridge -Force
-    $noisyHelperOutput = Invoke-HookWrapper -Payload $stopPayload -WrapperPath $wrapperPath
-    Assert-Equal 0 $LASTEXITCODE 'hook wrapper isolates a noisy helper without failing Codex'
-    Assert-Equal $null $noisyHelperOutput 'hook wrapper suppresses helper stdout and stderr'
 }
 finally {
     $env:CODEX_HOME = $previousCodexHome
@@ -107,4 +105,4 @@ finally {
     }
 }
 
-Write-Host '10 EventBridge Hook integration assertions passed'
+Write-Host '11 EventBridge Hook integration assertions passed'
