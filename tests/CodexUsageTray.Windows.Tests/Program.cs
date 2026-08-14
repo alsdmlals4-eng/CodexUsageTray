@@ -19,7 +19,9 @@ internal static class Program
             BrowserActivatorSendsExactSourceIdentity();
             UsageFailureDoesNotAssumeTheNetworkIsBroken();
             DiagnosticLogRedactsCredentialShapedText();
-            Console.WriteLine("6 Windows UI regression tests passed");
+            MobileSettingsRoundTripOutsideInstallDirectory();
+            MalformedMobileSettingsDisableNotifications();
+            Console.WriteLine("8 Windows UI regression tests passed");
             return 0;
         }
         catch (Exception exception)
@@ -188,6 +190,51 @@ internal static class Program
             {
                 Directory.Delete(directory, recursive: true);
             }
+        }
+    }
+
+    private static void MobileSettingsRoundTripOutsideInstallDirectory()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"CodexUsageTray-Mobile-{Guid.NewGuid():N}");
+        var path = Path.Combine(directory, "mobile-notifications.json");
+        try
+        {
+            var store = new MobileNotificationSettingsStore(path);
+            store.Save(new MobileNotificationSettings(true, "  gpt-notify-secret  "));
+            var loaded = store.Load();
+
+            Assert(loaded.Enabled, "saved mobile notifications must remain enabled");
+            Assert(loaded.Topic == "gpt-notify-secret", "the persisted topic must be trimmed");
+            Assert(MobileNotificationSettingsStore.DefaultPath.Contains(
+                    "CodexUsageTrayData",
+                    StringComparison.Ordinal),
+                "mobile settings must live outside the replace-on-update install directory");
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    private static void MalformedMobileSettingsDisableNotifications()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"CodexUsageTray-Mobile-{Guid.NewGuid():N}");
+        var path = Path.Combine(directory, "mobile-notifications.json");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(path, "{not-json");
+            var loaded = new MobileNotificationSettingsStore(path).Load();
+
+            Assert(!loaded.Enabled && loaded.Topic.Length == 0,
+                "malformed settings must fail closed without crashing the tray");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
         }
     }
 
