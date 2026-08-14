@@ -15,16 +15,68 @@ internal static class Program
         {
             UserClosingFlyoutHidesWithoutDisposing();
             PopupQueuePersistsUntilClickAndOpensEveryActivity();
+            ActivityPipeListenerRecoversAfterUnexpectedFailure();
             BrowserActivatorSendsExactSourceIdentity();
             UsageFailureDoesNotAssumeTheNetworkIsBroken();
             DiagnosticLogRedactsCredentialShapedText();
-            Console.WriteLine("5 Windows UI regression tests passed");
+            Console.WriteLine("6 Windows UI regression tests passed");
             return 0;
         }
         catch (Exception exception)
         {
             Console.Error.WriteLine(exception);
             return 1;
+        }
+    }
+
+    private static void ActivityPipeListenerRecoversAfterUnexpectedFailure()
+    {
+        var expected = CreateActivity("recovered-session", "recovered-turn", ActivityStatus.Completed);
+        var received = new TaskCompletionSource<ActivityEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var failures = new List<Exception>();
+        var attempts = 0;
+        using var shutdown = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        Task<ActivityEvent?> ReceiveNext(CancellationToken cancellationToken)
+        {
+            attempts++;
+            if (attempts == 1)
+            {
+                throw new InvalidOperationException("simulated listener failure");
+            }
+
+            if (attempts == 2)
+            {
+                return Task.FromResult<ActivityEvent?>(expected);
+            }
+
+            return Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken)
+                .ContinueWith<ActivityEvent?>(
+                    _ => null,
+                    cancellationToken,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+        }
+
+        var server = new ActivityPipeServer(
+            ReceiveNext,
+            failures.Add,
+            _ => Task.CompletedTask);
+        server.ActivityReceived += activity => received.TrySetResult(activity);
+        server.Start();
+        try
+        {
+            var actual = received.Task.WaitAsync(shutdown.Token).GetAwaiter().GetResult();
+            Assert(actual.ActivityKey == expected.ActivityKey,
+                "the activity after an unexpected listener failure must still be delivered");
+            Assert(attempts >= 2,
+                "the listener must retry after an unexpected failure");
+            Assert(failures.Count == 1 && failures[0] is InvalidOperationException,
+                "the unexpected listener failure must be recorded exactly once");
+        }
+        finally
+        {
+            server.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
     }
 
