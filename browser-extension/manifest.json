@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Codex Usage Tray - ChatGPT 알림 연결",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "ChatGPT 웹 작업 완료, 승인 요청, 안전한 오류 복구 상태를 Codex Usage Tray로 전달합니다.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxrySHl4oDEqhbYPpEhlFYT1oQRqkGtFXlL812mO8gZ3sucI3Ve9i9yWyGTt9BHlgv6i5ekvgWA86O/u9W+4duvKgTn/KYg2jB2SwgHysiTlYITLRElPXhV+UUkNrdcoH550LT2gaJOPHq7cnHNFQhWI0V+4rJnCIDGggOv4qqyOnJ39WUMDkOfJbW95hOlEfJ9cfJmUtJgFUiPQJrbCBoebR2kszZbs7s6GHPEpb/0LX4rTEXcsnA+nYjSmmogSsS4UBxkOw46oyY4ejr1ifYgLTs14sPdtvwBi23ml0AbMFkgC98s45WJPrhws72hYwkEKWj2nhcPu98Jg0hNUbowIDAQAB",
   "permissions": [
