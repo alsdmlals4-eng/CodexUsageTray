@@ -1,5 +1,7 @@
 # Codex Usage Tray 설계
 
+> **역사적 설계 스냅샷 · 2026-08-13.** 이 문서는 최초 트레이/Hook/개인정보 경계를 보존한다. 본문 중 “브라우저 확장을 구현하지 않는다”는 결정은 후속 웹 연결 구현으로 대체되었으며, 현재 동작 기준으로 사용하면 안 된다. 현재 웹 연결의 정본은 `README.md`, `docs/superpowers/specs/2026-08-13-existing-chat-focus-and-hook-reliability-design.md`, `browser-extension/`, 그리고 current `main`의 테스트다. 쿠키·대화 본문·자동 승인 미수집/미실행 경계는 계속 유효하다.
+
 ## 목표
 
 Windows 알림 영역에 상주하면서 현재 Codex 사용 제한의 남은 비율을 숫자와 색으로 표시한다. 아이콘을 클릭하면 모든 제한 구간의 남은 비율과 초기화 시각을 확인할 수 있어야 한다.
