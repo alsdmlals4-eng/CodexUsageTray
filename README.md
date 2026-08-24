@@ -22,6 +22,18 @@ Windows 오른쪽 아래 알림 영역에서 **Codex 잔여 사용량**을 숫�
 
 작업 알림은 공식 Codex `UserPromptSubmit`, `PermissionRequest`, `Stop` Hook을 사용합니다. 승인 Hook은 **알림만 전송하며 자동 승인이나 자동 거절을 하지 않습니다.**
 
+## 현재 동작 증거 경계
+
+2026-08-24 정본 감사 기준 current `main`은 `80b38efbaf5abb1379883018b456a83f8307bc84` (`v1.3.3 recovery self-test`)입니다. 소스와 브라우저 계약 검증에서 다음 경로가 존재함을 확인했습니다.
+
+- Codex Hook → `CodexUsageTray.EventBridge` → 로컬 activity pipe → 트레이 UI
+- ChatGPT 웹 확장 → native messaging EventBridge → 같은 activity pipe → 트레이 UI
+- 확장 Manifest V3의 `nativeMessaging` 권한과 `https://chatgpt.com/*` 단일 host 범위
+
+이 감사에서 확장 JavaScript 문법과 9개 브라우저 계약 테스트는 실행했지만, **실제 Windows 트레이 실행, 실제 Codex Hook 신뢰/팝업, 실제 ChatGPT 화면 감지·복구, 사용자 기기 체감은 실행하지 않았습니다 (`NOT_RUN`)**. 따라서 자동화 증거를 라이브 동작·사용성 PASS로 승격하지 않습니다.
+
+초기 `2026-08-13-codex-usage-tray-design.md`의 “브라우저 확장 미구현” 문장은 역사적 설계 스냅샷입니다. 현재 웹 연결의 기준은 이 README와 `docs/superpowers/specs/2026-08-13-existing-chat-focus-and-hook-reliability-design.md` 및 실제 `browser-extension/` 소스입니다.
+
 ## 준비물
 
 실행에 필요한 것:
